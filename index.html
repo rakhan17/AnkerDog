@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ANKERDOG</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --bg2:#0e141b;
+      --grid:#111826;
+      --hud-glass: rgba(255,255,255,0.06);
+      --hud-stroke: rgba(255,255,255,0.2);
+      --text: #eaf2ff;
+      --muted: #96a2b6;
+      --red: #ff3355;
+      --red-dim: #7a1b2a;
+      --blue: #2ae0ff;
+      --blue-dim: #166a78;
+      --gold: #ffd166;
+      --glass-blur: 12px;
+      --shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    html, body{
+      margin:0; padding:0; height:100%; background: radial-gradient(1000px 800px at 15% 10%, #0e1722 0%, var(--bg) 60%), linear-gradient(180deg, var(--bg2), var(--bg));
+      color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      overflow:hidden;
+    }
+    #wrap{position:relative; width:100%; height:100%;}
+    canvas{position:absolute; inset:0; width:100%; height:100%; display:block;}
+
+    /* HUD */
+    .hud{
+      position:absolute; top:12px; left:12px; right:12px;
+      display:flex; align-items:center; gap:12px; padding:12px 14px;
+      background: var(--hud-glass);
+      backdrop-filter: blur(var(--glass-blur));
+      border:1px solid var(--hud-stroke);
+      border-radius:16px; box-shadow: var(--shadow);
+    }
+    .brand{display:flex; align-items:baseline; gap:10px; padding-right:8px;}
+    .brand .title{
+      font-weight:900; letter-spacing:3px; font-size:20px; line-height:1;
+      background:linear-gradient(90deg, var(--blue), #a5f3fc 40%, var(--red) 80%);
+      -webkit-background-clip:text; background-clip:text; color:transparent;
+      text-shadow: 0 0 18px rgba(42,224,255,0.5), 0 0 8px rgba(255,51,85,0.25);
+    }
+    .toolbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    .group{display:flex; gap:8px; padding:8px; border-radius:12px; border:1px solid var(--hud-stroke); background: rgba(255,255,255,0.04)}
+    .btn{
+      cursor:pointer; user-select:none; padding:8px 10px; border-radius:10px; border:1px solid var(--hud-stroke);
+      background: rgba(255,255,255,0.04); color:var(--text); font-weight:600; letter-spacing:.3px; font-size:12px;
+      transition: all .15s ease; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    .btn:hover{transform: translateY(-1px); background: rgba(255,255,255,0.07)}
+    .btn.active{background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04)); box-shadow: 0 0 0 2px rgba(255,255,255,0.06) inset}
+    .btn.red{color: var(--red)}
+    .btn.blue{color: var(--blue)}
+
+    .stats{margin-left:auto; display:flex; align-items:center; gap:14px; padding:8px 12px; border-radius:12px; border:1px solid var(--hud-stroke); background: rgba(255,255,255,0.04)}
+    .stat{font-weight:800; font-size:12px; letter-spacing:.3px;}
+    .stat .n{font-size:14px; padding-left:6px}
+
+    .help{
+      position:absolute; bottom:12px; left:12px; right:12px;
+      padding:14px 16px; border:1px solid var(--hud-stroke); background: rgba(255,255,255,0.04); border-radius:12px; backdrop-filter: blur(var(--glass-blur));
+      color:var(--muted); font-size:11px; line-height:1.6;
+    }
+    .help-row{display:flex; gap:20px; margin-bottom:6px; flex-wrap:wrap;}
+    .help-row:last-child{margin-bottom:0;}
+    .help-section{display:flex; gap:8px; align-items:center;}
+    .help-label{color:var(--text); font-weight:600; opacity:0.9;}
+    .kbd{border:1px solid var(--hud-stroke); padding:2px 6px; border-radius:6px; background: rgba(255,255,255,0.05); color:var(--text); font-weight:700; font-size:10px;}
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="bg"></canvas>
+  <canvas id="game"></canvas>
+
+  <div class="hud">
+    <div class="brand">
+      <div class="title">ANKERDOG</div>
+    </div>
+    <div class="toolbar">
+      <div class="group" id="unitGroup">
+        <div class="btn" data-unit="mauler">Mauler</div>
+        <div class="btn" data-unit="sniper">Sniper</div>
+        <div class="btn" data-unit="warlock">Warlock</div>
+        <div class="btn" data-unit="anker">Anker</div>
+        <div class="btn" data-unit="spearman">Spearman</div>
+        <div class="btn" data-unit="bomber">Bomber</div>
+        <div class="btn" data-unit="healer">Healer</div>
+        <div class="btn" data-unit="rogue">Rogue</div>
+        <div class="btn" data-unit="saber">Saber</div>
+        <div class="btn" data-unit="ninja">Ninja</div>
+        <div class="btn" data-unit="shield">Shield</div>
+        <div class="btn" data-unit="artillery">Artillery</div>
+        <div class="btn" data-unit="berserker">Berserker</div>
+      </div>
+      <div class="group" id="teamGroup">
+        <div class="btn blue" data-team="blue">Blue</div>
+        <div class="btn red" data-team="red">Red</div>
+      </div>
+      <div class="group" id="controls">
+        <div class="btn" data-action="start">START WAR</div>
+        <div class="btn" data-action="pause">PAUSE</div>
+        <div class="btn" data-action="reset">RESET BATTLE</div>
+      </div>
+      <div class="group" id="buildGroup">
+        <div class="btn" data-build="river">River</div>
+        <div class="btn" data-build="wall">Wall</div>
+        <div class="btn" data-build="shieldwall">ShieldWall</div>
+        <div class="btn" data-build="turret">Turret</div>
+        <div class="btn" data-build="erase">Erase</div>
+        <div class="btn" data-build="none">Spawn Mode</div>
+        <div class="btn" data-build="bridge">Bridge</div>
+        <div class="btn" data-build="linewall">LineWall</div>
+      </div>
+    </div>
+    <div class="stats" id="stats">
+      <div class="stat" style="color:var(--blue)">Blue Alive:<span class="n" id="blueCount">0</span></div>
+      <div class="stat" style="color:var(--red)">Red Alive:<span class="n" id="redCount">0</span></div>
+    </div>
+  </div>
+  <div class="help">
+    <div class="help-row">
+      <div class="help-section"><span class="help-label">Controls:</span> Click/Drag to spawn · Hold <span class="kbd">Shift</span> for rapid paint · <span class="kbd">Mousewheel</span> density</div>
+    </div>
+    <div class="help-row">
+      <div class="help-section">
+        <span class="help-label">Units:</span>
+        <span class="kbd">1</span> Mauler
+        <span class="kbd">2</span> Sniper
+        <span class="kbd">3</span> Warlock
+        <span class="kbd">4</span> Anker
+        <span class="kbd">5</span> Spearman
+        <span class="kbd">6</span> Bomber
+        <span class="kbd">7</span> Healer
+        <span class="kbd">8</span> Rogue
+        <span class="kbd">9</span> Saber
+        <span class="kbd">0</span> Ninja
+        <span class="kbd">G</span> Shield
+        <span class="kbd">Q</span> Artillery
+        <span class="kbd">Z</span> Berserker
+      </div>
+    </div>
+    <div class="help-row">
+      <div class="help-section">
+        <span class="help-label">Team:</span>
+        <span class="kbd">B</span> Blue
+        <span class="kbd">R</span> Red
+      </div>
+      <div class="help-section">
+        <span class="help-label">Build:</span>
+        <span class="kbd">V</span> River
+        <span class="kbd">W</span> Wall
+        <span class="kbd">S</span> ShieldWall
+        <span class="kbd">T</span> Turret
+        <span class="kbd">K</span> Bridge
+        <span class="kbd">L</span> LineWall
+        <span class="kbd">E</span> Erase
+        <span class="kbd">N</span> Spawn
+      </div>
+      <div class="help-section">
+        <span class="help-label">Game:</span>
+        <span class="kbd">Space</span> Start/Pause
+        <span class="kbd">X</span> Reset
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Utility ----------
+  const TAU = Math.PI * 2;
+  const rand = (a,b)=>Math.random()*(b-a)+a;
+  const clamp=(v,mi,ma)=>v<mi?mi:v>ma?ma:v;
+  const dist2=(ax,ay,bx,by)=>{ const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; };
+  const lerp=(a,b,t)=>a+(b-a)*t;
+
+  // ---------- Canvas Setup ----------
+  const bg = document.getElementById('bg');
+  const canvas = document.getElementById('game');
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const ctxBG = bg.getContext('2d');
+  const ctx = canvas.getContext('2d');
+
+  function resize(){
+    const w = window.innerWidth, h = window.innerHeight;
+    for(const c of [bg, canvas]){ c.width = w*dpr; c.height = h*dpr; c.style.width=w+'px'; c.style.height=h+'px'; }
+    drawGrid();
+  }
+  window.addEventListener('resize', resize);
+
+  // Pre-rendered grid on bg canvas
+  function drawGrid(){
+    const w = bg.width, h = bg.height; const g = ctxBG;
+    g.clearRect(0,0,w,h);
+    g.fillStyle = '#0b0f14';
+    g.fillRect(0,0,w,h);
+    const step = 32*dpr;
+    g.strokeStyle = 'rgba(32,50,72,0.35)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for(let x=0;x<w;x+=step){ g.moveTo(x,0); g.lineTo(x,h); }
+    for(let y=0;y<h;y+=step){ g.moveTo(0,y); g.lineTo(w,y); }
+    g.stroke();
+    // vignette
+    const rad = g.createRadialGradient(w*0.5,h*0.4,0,w*0.5,h*0.4, Math.max(w,h)*0.7);
+    rad.addColorStop(0,'rgba(0,0,0,0)'); rad.addColorStop(1,'rgba(0,0,0,0.6)');
+    g.fillStyle = rad; g.fillRect(0,0,w,h);
+  }
+
+  resize();
+
+  // ---------- Input & UI ----------
+  const unitGroup = document.getElementById('unitGroup');
+  const teamGroup = document.getElementById('teamGroup');
+  const controls = document.getElementById('controls');
+  const blueCountEl = document.getElementById('blueCount');
+  const redCountEl = document.getElementById('redCount');
+
+  const UI = {
+    selectedUnit:'mauler',
+    selectedTeam:'blue',
+    painting:false,
+    paintDensity: 1, // spawns per sample tick
+    buildMode:'none' // 'river' | 'wall' | 'erase' | 'none'
+  };
+
+  function setActive(container, selector){
+    [...container.querySelectorAll('.btn')].forEach(b=>b.classList.toggle('active', b[selector]));
+  }
+  function updateUnitActive(){
+    [...unitGroup.children].forEach(b=>b.classList.toggle('active', b.dataset.unit===UI.selectedUnit));
+  }
+  function updateTeamActive(){
+    [...teamGroup.children].forEach(b=>b.classList.toggle('active', b.dataset.team===UI.selectedTeam));
+  }
+  unitGroup.addEventListener('click', e=>{
+    const b = e.target.closest('.btn'); if(!b) return; UI.selectedUnit = b.dataset.unit; updateUnitActive();
+  });
+  teamGroup.addEventListener('click', e=>{
+    const b = e.target.closest('.btn'); if(!b) return; UI.selectedTeam = b.dataset.team; updateTeamActive();
+  });
+  const buildGroup = document.getElementById('buildGroup');
+  function updateBuildActive(){ if(!buildGroup) return; [...buildGroup.children].forEach(b=>b.classList.toggle('active', b.dataset.build===UI.buildMode)); }
+  buildGroup.addEventListener('click', e=>{ const b=e.target.closest('.btn'); if(!b) return; UI.buildMode=b.dataset.build; updateBuildActive(); });
+  updateUnitActive(); updateTeamActive();
+  updateBuildActive();
+
+  document.addEventListener('keydown', e=>{
+    if(e.target && ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+    if(e.key==='1'){ UI.selectedUnit='mauler'; updateUnitActive(); }
+    if(e.key==='2'){ UI.selectedUnit='sniper'; updateUnitActive(); }
+    if(e.key==='3'){ UI.selectedUnit='warlock'; updateUnitActive(); }
+    if(e.key==='4'){ UI.selectedUnit='anker'; updateUnitActive(); }
+    if(e.key==='5'){ UI.selectedUnit='spearman'; updateUnitActive(); }
+    if(e.key==='6'){ UI.selectedUnit='bomber'; updateUnitActive(); }
+    if(e.key==='7'){ UI.selectedUnit='healer'; updateUnitActive(); }
+    if(e.key==='8'){ UI.selectedUnit='rogue'; updateUnitActive(); }
+    if(e.key==='9'){ UI.selectedUnit='saber'; updateUnitActive(); }
+    if(e.key==='0'){ UI.selectedUnit='ninja'; updateUnitActive(); }
+    if(e.key==='g' || e.key==='G'){ UI.selectedUnit='shield'; updateUnitActive(); }
+    if(e.key==='q' || e.key==='Q'){ UI.selectedUnit='artillery'; updateUnitActive(); }
+    if(e.key==='z' || e.key==='Z'){ UI.selectedUnit='berserker'; updateUnitActive(); }
+    if(e.key==='u' || e.key==='U'){ UI.selectedUnit='summoner'; updateUnitActive(); }
+    if(e.key==='f' || e.key==='F'){ UI.selectedUnit='frost'; updateUnitActive(); }
+    if(e.key==='j' || e.key==='J'){ UI.selectedUnit='engineer'; updateUnitActive(); }
+    if(e.key==='b' || e.key==='B'){ UI.selectedTeam='blue'; updateTeamActive(); }
+    if(e.key==='r' || e.key==='R'){ UI.selectedTeam='red'; updateTeamActive(); }
+    if(e.code==='Space'){ toggleRun(); e.preventDefault(); }
+    if(e.key==='x' || e.key==='X'){ resetBattle(); }
+    if(e.key==='Shift'){ UI.painting = true; }
+    if(e.key==='v' || e.key==='V'){ UI.buildMode='river'; updateBuildActive(); }
+    if(e.key==='w' || e.key==='W'){ UI.buildMode='wall'; updateBuildActive(); }
+    if(e.key==='e' || e.key==='E'){ UI.buildMode='erase'; updateBuildActive(); }
+    if(e.key==='n' || e.key==='N'){ UI.buildMode='none'; updateBuildActive(); }
+    if(e.key==='k' || e.key==='K'){ UI.buildMode='bridge'; updateBuildActive(); }
+    if(e.key==='l' || e.key==='L'){ UI.buildMode='linewall'; updateBuildActive(); }
+    if(e.key==='s' || e.key==='S'){ UI.buildMode='shieldwall'; updateBuildActive(); }
+    if(e.key==='t' || e.key==='T'){ UI.buildMode='turret'; updateBuildActive(); }
+  });
+  document.addEventListener('keyup', e=>{ if(e.key==='Shift'){ UI.painting = false; } });
+  document.addEventListener('wheel', e=>{ UI.paintDensity = clamp(UI.paintDensity + (e.deltaY<0?1:-1), 1, 10); });
+
+  controls.addEventListener('click', e=>{
+    const b=e.target.closest('.btn'); if(!b) return; const a=b.dataset.action;
+    if(a==='start'){ run=true; }
+    if(a==='pause'){ run=false; }
+    if(a==='reset'){ resetBattle(); }
+  });
+
+  // Mouse spawning
+  const pointer = {x:0,y:0, down:false, lx:null, ly:null};
+  canvas.addEventListener('mousedown', e=>{ pointer.down=true; spawnAtEvent(e, true); });
+  canvas.addEventListener('mouseup', ()=>{ pointer.down=false; });
+  canvas.addEventListener('mouseleave', ()=>{ pointer.down=false; });
+  canvas.addEventListener('mousemove', e=>{ pointer.x=e.offsetX*dpr; pointer.y=e.offsetY*dpr; if(pointer.down) spawnAtEvent(e, false); });
+
+  function spawnAtEvent(e, burst){
+    const x = e.offsetX*dpr, y=e.offsetY*dpr;
+    if(UI.buildMode==='river'){ const n= burst?2:1; for(let i=0;i<n;i++) game.addObstacle('river', x+rand(-6,6)*dpr, y+rand(-6,6)*dpr, 22*dpr); return; }
+    if(UI.buildMode==='wall'){ const n= burst?2:1; for(let i=0;i<n;i++) game.addObstacle('wall', x+rand(-4,4)*dpr, y+rand(-4,4)*dpr, 18*dpr); return; }
+    if(UI.buildMode==='shieldwall'){ const n= burst?1:1; for(let i=0;i<n;i++) game.addShieldWall(UI.selectedTeam, x+rand(-4,4)*dpr, y+rand(-4,4)*dpr, 20*dpr); return; }
+    if(UI.buildMode==='turret'){ game.spawnUnit('turret', UI.selectedTeam, x, y); return; }
+    if(UI.buildMode==='bridge'){ const n= burst?1:1; for(let i=0;i<n;i++) game.addBridge(x, y, 26*dpr); return; }
+    if(UI.buildMode==='linewall'){
+      if(pointer.lx!=null){ const dx=x-pointer.lx, dy=y-pointer.ly; const steps=Math.max(1, Math.ceil(Math.hypot(dx,dy)/(12*dpr))); for(let s=1;s<=steps;s++){ const px=pointer.lx+dx*s/steps, py=pointer.ly+dy*s/steps; game.addObstacle('wall', px, py, 16*dpr); } }
+      pointer.lx=x; pointer.ly=y; return;
+    } else { pointer.lx=null; pointer.ly=null; }
+    if(UI.buildMode==='erase'){ game.eraseObstacle(x,y, 28*dpr); return; }
+    const count = burst? UI.paintDensity*2 : (UI.painting? UI.paintDensity*3 : UI.paintDensity);
+    for(let i=0;i<count;i++) game.spawnUnit(UI.selectedUnit, UI.selectedTeam, x+rand(-8,8)*dpr, y+rand(-8,8)*dpr);
+  }
+
+  // ---------- Game Objects ----------
+  const TEAM = { blue: { color:'#2ae0ff', blood:'#1fb8d4' }, red:{ color:'#ff3355', blood:'#d61b3b' } };
+
+  class Particle{
+    constructor(x,y, vx,vy, life, color, size){ this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.life=life; this.t=0; this.color=color; this.size=size; }
+    update(dt){ this.t+=dt; this.x+=this.vx*dt; this.y+=this.vy*dt; this.vx*=0.98; this.vy+=20*dt; }
+    draw(g){ const a=1-this.t/this.life; if(a<=0) return false; g.globalAlpha=a; g.fillStyle=this.color; g.beginPath(); g.arc(this.x,this.y,this.size,0,TAU); g.fill(); g.globalAlpha=1; return a>0; }
+  }
+
+  class FloatingText{
+    constructor(x,y, text, color){ this.x=x; this.y=y; this.vy=-20; this.t=0; this.life=0.9; this.text=text; this.color=color; }
+    update(dt){ this.t+=dt; this.y+=this.vy*dt; }
+    draw(g){ const a=1-this.t/this.life; if(a<=0) return false; g.globalAlpha=a; g.fillStyle=this.color; g.font=`${12*dpr}px ui-sans-serif`; g.textAlign='center'; g.fillText(this.text, this.x, this.y); g.globalAlpha=1; return a>0; }
+  }
+
+  class Projectile{
+    constructor(x,y, vx,vy, team, dmg, seekTarget=null, speed=350){
+      this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.team=team; this.dmg=dmg; this.dead=false; this.seek=seekTarget; this.speed=speed;
+      this.trail=[]; this.trailMax=10; this.radius=3*dpr; this.age=0; this.maxAge=4; this.onExplode=null; this.color='#ffffff';
+    }
+    update(dt, game){
+      this.age+=dt; if(this.age>this.maxAge){ if(this.onExplode){ this.onExplode(game,this.x,this.y,this); } this.dead=true; return; }
+      if(this.seek && !this.seek.dead){
+        // steer towards target
+        const dx=this.seek.x-this.x, dy=this.seek.y-this.y; const len=Math.hypot(dx,dy)+1e-6; const dirx=dx/len, diry=dy/len;
+        this.vx = lerp(this.vx, dirx*this.speed, 0.08);
+        this.vy = lerp(this.vy, diry*this.speed, 0.08);
+      }
+      const spd = Math.hypot(this.vx, this.vy);
+      const max = this.speed*1.1; if(spd>max){ this.vx*=max/spd; this.vy*=max/spd; }
+      // trail
+      this.trail.push([this.x,this.y]); if(this.trail.length>this.trailMax) this.trail.shift();
+      this.x+=this.vx*dt; this.y+=this.vy*dt;
+
+      // collision via spatial grid
+      const enemies = game.queryNearby(this.x,this.y, 48*dpr);
+      for(const u of enemies){ if(u.team===this.team || u.dead) continue; const r=u.radius+this.radius; if(dist2(this.x,this.y,u.x,u.y) <= r*r){ if(this.onExplode){ this.onExplode(game,this.x,this.y,this); } else { u.hit(this.dmg, game, this.x,this.y); } this.dead=true; break; } }
+    }
+    draw(g){
+      // trail lines
+      if(this.trail.length>1){
+        for(let i=1;i<this.trail.length;i++){
+          const p0=this.trail[i-1], p1=this.trail[i];
+          const a=i/this.trail.length; g.strokeStyle = this.color.replace('rgb','rgba').replace(')',`,`+(0.25*a)+')');
+          g.lineWidth = 2*dpr*a; g.beginPath(); g.moveTo(p0[0],p0[1]); g.lineTo(p1[0],p1[1]); g.stroke();
+        }
+      }
+      g.fillStyle = this.color; g.beginPath(); g.arc(this.x,this.y,this.radius,0,TAU); g.fill();
+    }
+  }
+
+  function drawIcon(g, type, x, y, r, color){
+    g.save(); g.translate(x,y); g.strokeStyle = '#0a0a0a'; g.lineWidth=2*dpr; g.fillStyle=color;
+    if(type==='mauler'){
+      g.beginPath(); g.moveTo(-r*0.8, r*0.6); g.lineTo(0,-r*0.9); g.lineTo(r*0.8, r*0.6); g.closePath(); g.fill(); g.stroke();
+    } else if(type==='sniper'){
+      g.beginPath(); g.rect(-r*0.8, -r*0.2, r*1.6, r*0.4); g.fill(); g.stroke(); g.beginPath(); g.arc(r*0.9,0,r*0.25,0,TAU); g.fill();
+    } else if(type==='warlock'){
+      g.beginPath(); for(let i=0;i<5;i++){ const a=i*TAU/5 - Math.PI/2; const R=r*0.95, r2=r*0.45; g.lineTo(Math.cos(a)*R, Math.sin(a)*R); const a2=a+TAU/10; g.lineTo(Math.cos(a2)*r2, Math.sin(a2)*r2); } g.closePath(); g.fill(); g.stroke();
+    } else if(type==='anker'){
+      g.beginPath(); g.arc(0,0,r*0.9,0,TAU); g.fill(); g.stroke(); g.fillStyle='#0b0f14'; g.beginPath(); g.arc(0,0,r*0.5,0,TAU); g.fill();
+    } else if(type==='spearman'){
+      g.beginPath(); g.moveTo(-r*0.9,0); g.lineTo(r*0.5,0); g.stroke(); g.beginPath(); g.moveTo(r*0.5,0); g.lineTo(r*0.2,-r*0.4); g.lineTo(r*0.8,0); g.lineTo(r*0.2,r*0.4); g.closePath(); g.fill(); g.stroke();
+    } else if(type==='bomber'){
+      g.beginPath(); g.arc(0,0,r*0.85,0,TAU); g.fill(); g.stroke(); g.fillStyle='#222'; g.beginPath(); g.rect(-r*0.15,-r*1.1,r*0.3,r*0.4); g.fill();
+    } else if(type==='healer'){
+      g.beginPath(); g.rect(-r*0.6,-r*0.2,r*1.2,r*0.4); g.rect(-r*0.2,-r*0.6,r*0.4,r*1.2); g.fill(); g.stroke();
+    } else if(type==='rogue'){
+      g.beginPath(); g.moveTo(-r*0.9,0); g.lineTo(-r*0.2,-r*0.7); g.lineTo(r*0.9,0); g.lineTo(-r*0.2,r*0.7); g.closePath(); g.fill(); g.stroke();
+    } else if(type==='saber'){
+      g.beginPath(); g.arc(0,0,r*0.85,0,TAU); g.stroke(); g.beginPath(); g.moveTo(-r*0.5,-r*0.2); g.lineTo(r*0.9,0); g.lineTo(-r*0.5,r*0.2); g.closePath(); g.fill();
+    } else if(type==='ninja'){
+      g.beginPath(); g.rect(-r*0.7,-r*0.7,r*1.4,r*1.4); g.fill(); g.stroke(); g.clearRect(-r*0.2,-r*0.2,r*0.4,r*0.4);
+    } else if(type==='shield'){
+      g.beginPath(); g.moveTo(0,-r*0.9); g.arc(0,0,r*0.9,-Math.PI/2,Math.PI/2); g.lineTo(0,-r*0.9); g.closePath(); g.fill(); g.stroke();
+    } else if(type==='artillery'){
+      g.beginPath(); g.rect(-r*0.7, r*0.2, r*1.4, r*0.5); g.fill(); g.stroke(); g.beginPath(); g.moveTo(-r*0.2, r*0.2); g.lineTo(r*0.9, -r*0.6); g.lineWidth=3*dpr; g.stroke();
+    } else if(type==='berserker'){
+      g.beginPath(); g.moveTo(-r*0.8,-r*0.2); g.lineTo(-r*0.1,0); g.lineTo(-r*0.8,r*0.2); g.closePath(); g.fill(); g.beginPath(); g.moveTo(r*0.8,-r*0.2); g.lineTo(r*0.1,0); g.lineTo(r*0.8,r*0.2); g.closePath(); g.fill(); g.stroke();
+    } else if(type==='summoner'){
+      g.beginPath(); g.arc(0,0,r*0.8,0,TAU); g.fill(); g.stroke(); g.beginPath(); g.moveTo(-r*0.3,0); g.lineTo(0,-r*0.6); g.lineTo(r*0.3,0); g.stroke();
+    } else if(type==='frost'){
+      g.beginPath(); for(let i=0;i<6;i++){ const a=i*TAU/6; g.moveTo(0,0); g.lineTo(Math.cos(a)*r*0.9, Math.sin(a)*r*0.9);} g.stroke();
+    } else if(type==='engineer' || type==='turret'){
+      g.beginPath(); g.rect(-r*0.8,-r*0.5,r*1.6,r*1.0); g.fill(); g.stroke(); g.beginPath(); g.rect(-r*0.2,-r*1.0,r*0.4,r*0.5); g.fill();
+    } else if(type==='minion'){
+      g.beginPath(); g.arc(0,0,r*0.7,0,TAU); g.fill(); g.stroke();
+    } else {
+      g.beginPath(); g.arc(0,0,r*0.9,0,TAU); g.fill();
+    }
+    g.restore();
+  }
+
+  class Unit{
+    constructor(type, team, x, y){
+      this.type = type; this.team = team; this.color = TEAM[team].color; this.blood = TEAM[team].blood;
+      this.x=x; this.y=y; this.vx=0; this.vy=0; this.flash=0; this.dead=false; this.state='idle'; this.target=null; this.cool=0; this.age=0; this.corpse=false; this.retarget=0;
+      // stats per type
+      const scale = dpr;
+      if(type==='mauler'){
+        this.maxHp=70; this.hp=this.maxHp; this.damage=12; this.range=26*scale; this.speed=105*scale; this.coolMax=0.7; this.radius=10*scale;
+      }else if(type==='sniper'){
+        this.maxHp=40; this.hp=this.maxHp; this.damage=18; this.range=260*scale; this.speed=78*scale; this.coolMax=1.0; this.radius=9*scale;
+      }else if(type==='warlock'){
+        this.maxHp=60; this.hp=this.maxHp; this.damage=11; this.range=160*scale; this.speed=82*scale; this.coolMax=0.9; this.radius=10*scale;
+      }else if(type==='anker'){
+        this.maxHp=440; this.hp=this.maxHp; this.damage=28; this.range=32*scale; this.speed=45*scale; this.coolMax=1.3; this.radius=16*scale; this.immuneKnock=true;
+      }else if(type==='spearman'){
+        this.maxHp=80; this.hp=this.maxHp; this.damage=14; this.range=42*scale; this.speed=90*scale; this.coolMax=0.9; this.radius=10*scale;
+      }else if(type==='bomber'){
+        this.maxHp=55; this.hp=this.maxHp; this.damage=16; this.range=150*scale; this.speed=76*scale; this.coolMax=1.2; this.radius=10*scale;
+      }else if(type==='healer'){
+        this.maxHp=50; this.hp=this.maxHp; this.heal=16; this.range=140*scale; this.speed=76*scale; this.coolMax=1.0; this.radius=10*scale;
+      }else if(type==='rogue'){
+        this.maxHp=55; this.hp=this.maxHp; this.damage=16; this.range=24*scale; this.speed=140*scale; this.coolMax=0.8; this.radius=9*scale;
+      } else if(type==='saber'){
+        this.maxHp=65; this.hp=this.maxHp; this.damage=10; this.range=34*scale; this.speed=120*scale; this.coolMax=0.6; this.radius=10*scale;
+      } else if(type==='ninja'){
+        this.maxHp=45; this.hp=this.maxHp; this.damage=22; this.range=26*scale; this.speed=150*scale; this.coolMax=1.2; this.radius=9*scale; this.vanish=0;
+      } else if(type==='shield'){
+        this.maxHp=120; this.hp=this.maxHp; this.damage=8; this.range=24*scale; this.speed=70*scale; this.coolMax=1.1; this.radius=12*scale; this.aura=90*scale; this.shieldPulse=0;
+      } else if(type==='artillery'){
+        this.maxHp=50; this.hp=this.maxHp; this.damage=18; this.range=300*scale; this.speed=70*scale; this.coolMax=1.6; this.radius=10*scale;
+      } else if(type==='berserker'){
+        this.maxHp=85; this.hp=this.maxHp; this.damage=14; this.range=26*scale; this.speed=130*scale; this.coolMax=0.7; this.radius=10*scale; this.rage=false;
+      } else if(type==='summoner'){
+        this.maxHp=70; this.hp=this.maxHp; this.damage=8; this.range=120*scale; this.speed=80*scale; this.coolMax=2.0; this.radius=10*scale;
+      } else if(type==='frost'){
+        this.maxHp=55; this.hp=this.maxHp; this.damage=10; this.range=180*scale; this.speed=78*scale; this.coolMax=1.1; this.radius=10*scale;
+      } else if(type==='engineer'){
+        this.maxHp=75; this.hp=this.maxHp; this.damage=8; this.range=0; this.speed=80*scale; this.coolMax=3.0; this.radius=10*scale; this.hasTurret=false;
+      } else if(type==='turret'){
+        this.maxHp=80; this.hp=this.maxHp; this.damage=14; this.range=240*scale; this.speed=0; this.coolMax=0.5; this.radius=12*scale; this.immuneKnock=true;
+      } else if(type==='minion'){
+        this.maxHp=30; this.hp=this.maxHp; this.damage=8; this.range=22*scale; this.speed=120*scale; this.coolMax=0.9; this.radius=8*scale;
+      } else {
+        this.maxHp=60; this.hp=this.maxHp; this.damage=10; this.range=120*scale; this.speed=80*scale; this.coolMax=1.0; this.radius=10*scale;
+      }
+      this.shield=0;
+    }
+    findTarget(game){
+      this.retarget -= game.dt;
+      if(this.retarget>0 && this.target && !this.target.dead) return;
+      this.retarget = 0.35 + Math.random()*0.25;
+      let best=null, bd=1e12;
+      // Prioritas: cari shieldwall musuh dulu, baru unit
+      for(const sw of game.shieldWalls){ if(sw.team===this.team||sw.dead) continue; const d=dist2(this.x,this.y,sw.x,sw.y); if(d<bd && d<this.range*this.range*4){ bd=d; best=sw; } }
+      if(!best){ for(const u of game.units){ if(u.team===this.team||u.dead) continue; const d=dist2(this.x,this.y,u.x,u.y); if(d<bd){ bd=d; best=u; } } }
+      this.target = best;
+    }
+    hit(dmg, game, ox,oy){
+      if(this.dead) return;
+      // shield absorbs first
+      if(this.shield>0 && dmg>0){ const take=Math.min(this.shield, dmg); this.shield-=take; dmg-=take; game.texts.push(new FloatingText(this.x, this.y-14*dpr, '-'+Math.round(take)+' shield', '#a5f3fc')); }
+      this.hp-=dmg; this.flash=0.12;
+      // particles & number
+      for(let i=0;i<6;i++) game.spawnParticle(ox??this.x, oy??this.y, rand(-60,60), rand(-60,30), 0.5+Math.random()*0.6, this.blood, 2*dpr);
+      game.texts.push(new FloatingText(this.x, this.y-10*dpr, Math.round(dmg).toString(), '#fff'));
+      if(this.hp<=0){ this.dead=true; this.state='dead'; this.vx=this.vy=0; this.corpse=true; }
+    }
+    think(game, dt){
+      this.age+=dt; this.cool-=dt; if(this.dead) return;
+      if(!this.target || this.target.dead){ this.findTarget(game); if(!this.target){ this.state='idle'; return; } }
+      const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy);
+      
+      // Turret: selalu attack jika ada target dalam range
+      if(this.type==='turret'){
+        if(d <= this.range){ this.state='attack'; if(this.cool<=0){ this.attack(game); this.cool=this.coolMax; } }
+        else { this.state='idle'; }
+        return;
+      }
+      
+      if(d <= this.range){ this.state='attack'; this.vx*=0.9; this.vy*=0.9; if(this.cool<=0){ this.attack(game); this.cool=this.coolMax; } }
+      else { 
+        this.state='move'; 
+        const dirx=dx/(d+1e-6), diry=dy/(d+1e-6);
+        // Cek apakah ada obstacle di jalur langsung
+        const blocked = game.isPathBlocked(this.x, this.y, this.target.x, this.target.y);
+        if(blocked){
+          // Gunakan pathfinding hanya jika terblokir
+          if(!this.pathRetry || this.pathRetry<=0){
+            this.cachedPath = game.findPath(this.x, this.y, this.target.x, this.target.y);
+            this.pathRetry = 0.5; // retry setiap 0.5 detik
+          }
+          this.pathRetry -= dt;
+          if(this.cachedPath && this.cachedPath.length>1){ 
+            const next=this.cachedPath[1]; 
+            const ndx=next.x-this.x, ndy=next.y-this.y; 
+            const nd=Math.hypot(ndx,ndy)+1e-6; 
+            // Jika sudah dekat dengan waypoint, ambil waypoint berikutnya
+            if(nd < 30*dpr && this.cachedPath.length>2){ this.cachedPath.shift(); }
+            this.vx = lerp(this.vx, (ndx/nd)*this.speed, 0.22); 
+            this.vy = lerp(this.vy, (ndy/nd)*this.speed, 0.22); 
+          } else { 
+            // Jika pathfinding gagal, coba gerak ke samping
+            const perpx = -diry, perpy = dirx;
+            this.vx = lerp(this.vx, perpx*this.speed*0.8, 0.15); 
+            this.vy = lerp(this.vy, perpy*this.speed*0.8, 0.15); 
+          }
+        } else {
+          // Jalur bebas, langsung ke target
+          this.cachedPath = null;
+          this.vx = lerp(this.vx, dirx*this.speed, 0.22); 
+          this.vy = lerp(this.vy, diry*this.speed, 0.22);
+        }
+      }
+
+      // Shieldbearer pulse shields to allies
+      if(this.type==='shield'){ this.shieldPulse -= dt; if(this.shieldPulse<=0){ this.shieldPulse=2.5; for(const u of game.units){ if(u.team!==this.team||u.dead) continue; if(dist2(this.x,this.y,u.x,u.y) <= this.aura*this.aura){ u.shield = Math.min(80, (u.shield||0) + 20); game.particles.push(new Particle(u.x,u.y, rand(-20,20), rand(-20,20), 0.4, '#a5f3fc', 2*dpr)); } } } }
+      // Berserker rage
+      if(this.type==='berserker'){ const hpRatio=this.hp/this.maxHp; const enr = hpRatio<0.5; if(enr && !this.rage){ this.rage=true; this.damage*=1.5; this.speed*=1.2; }
+        if(!enr && this.rage){ this.rage=false; this.damage/=1.5; this.speed/=1.2; } }
+      // Turret: stays put (speed 0)
+      if(this.type==='turret'){ this.vx=this.vy=0; }
+    }
+    attack(game){
+      if(this.type==='mauler' || this.type==='anker' || this.type==='spearman' || this.type==='rogue' || this.type==='saber' || this.type==='shield'){
+        // melee arc hit: check small radius around front
+        let r = this.radius+16*dpr; if(this.type==='anker') r=this.radius+22*dpr; if(this.type==='spearman') r=this.radius+28*dpr;
+        if(this.type==='rogue'){ this.x = lerp(this.x, this.target.x, 0.35); this.y = lerp(this.y, this.target.y, 0.35); r+=6*dpr; }
+        if(this.type==='saber'){ r+=10*dpr; for(let i=0;i<12;i++){ game.spawnParticle(this.x, this.y, Math.cos(i/12*TAU)*220, Math.sin(i/12*TAU)*220, 0.2, '#9ef1ff', 2*dpr);} }
+        if(this.type==='shield'){ r+=4*dpr; }
+        const enemies = game.queryNearby(this.x,this.y, r+8*dpr);
+        for(const u of enemies){ if(u.team===this.team||u.dead) continue; if(dist2(this.x,this.y,u.x,u.y) <= (r+u.radius)*(r+u.radius)){ u.hit(this.damage, game); }
+        }
+        // Hit shieldWalls juga
+        for(const sw of game.shieldWalls){ if(sw.dead || sw.team===this.team) continue; if(dist2(this.x,this.y,sw.x,sw.y) <= (r+sw.r)*(r+sw.r)){ sw.hp-=this.damage; sw.flash=0.1; game.texts.push(new FloatingText(sw.x,sw.y-12*dpr,'-'+Math.round(this.damage),TEAM[sw.team].color)); for(let i=0;i<4;i++) game.spawnParticle(sw.x,sw.y,rand(-60,60),rand(-60,30),0.4,TEAM[sw.team].blood,2*dpr); if(sw.hp<=0){ sw.dead=true; for(let i=0;i<30;i++) game.spawnParticle(sw.x,sw.y,rand(-180,180),rand(-180,180),0.8,TEAM[sw.team].blood,3*dpr); game.pathCache.clear(); } } }
+        if(this.type==='shield'){
+          // small frontal barrier (short-lived wall obstacle)
+          const ang = Math.atan2(this.vy, this.vx); const bx=this.x+Math.cos(ang)* (this.radius+12*dpr), by=this.y+Math.sin(ang)*(this.radius+12*dpr);
+          game.addObstacle('wall', bx, by, 14*dpr, 2.0); // lifespan via alpha handled in draw with fade
+        }
+      } else if(this.type==='sniper'){
+        // fast straight projectile
+        if(!this.target) return;
+        const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy)+1e-6; const sp=420*dpr; const vx=dx/d*sp, vy=dy/d*sp;
+        const pr=new Projectile(this.x, this.y, vx, vy, this.team, this.damage, null, sp); pr.color='rgb(255,255,255)'; game.projectiles.push(pr);
+      } else if(this.type==='warlock'){
+        // seeking fireball
+        if(!this.target) return; const sp=260*dpr; const ang=rand(0,TAU); const vx=Math.cos(ang)*sp*0.2, vy=Math.sin(ang)*sp*0.2;
+        const p = new Projectile(this.x, this.y, vx, vy, this.team, this.damage, this.target, sp);
+        p.radius = 4*dpr; p.trailMax=14; p.color='rgb(255,140,0)'; game.projectiles.push(p);
+      } else if(this.type==='bomber'){
+        if(!this.target) return; const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy)+1e-6; const sp=280*dpr; const vx=dx/d*sp*0.9, vy=dy/d*sp*0.9;
+        const p=new Projectile(this.x,this.y,vx,vy,this.team,this.damage,null,sp); p.radius=5*dpr; p.trailMax=12; p.color='rgb(255,80,80)';
+        p.onExplode=(game,ex,ey)=>{ const rad=48*dpr; for(const u of game.units){ if(u.dead||u.team===this.team) continue; if(dist2(ex,ey,u.x,u.y) <= (rad+u.radius)*(rad+u.radius)){ u.hit(this.damage+10, game, ex,ey); } }
+          for(let i=0;i<28;i++) game.spawnParticle(ex,ey,rand(-140,140),rand(-140,140),0.6+Math.random()*0.6,'#ff4444',3*dpr);
+        };
+        game.projectiles.push(p);
+      } else if(this.type==='healer'){
+        // heal lowest hp ally in range
+        let ally=null, bd=1e12; for(const u of game.units){ if(u.team!==this.team||u.dead) continue; if(u.hp>=u.maxHp) continue; const d=dist2(this.x,this.y,u.x,u.y); if(d<bd){ bd=d; ally=u; } }
+        if(!ally) return; const dx=ally.x-this.x, dy=ally.y-this.y; const d=Math.hypot(dx,dy)+1e-6; const sp=300*dpr; const vx=dx/d*sp, vy=dy/d*sp;
+        const p=new Projectile(this.x,this.y,vx,vy,this.team,0,null,sp); p.color='rgb(120,255,180)'; p.trailMax=10; p.radius=3*dpr; p.heal=this.heal;
+        // custom collision: heal ally
+        p.update = function(dt, game){ this.age+=dt; if(this.age>this.maxAge){ this.dead=true; return; }
+          this.trail.push([this.x,this.y]); if(this.trail.length>this.trailMax) this.trail.shift(); this.x+=this.vx*dt; this.y+=this.vy*dt;
+          const allies=game.queryNearby(this.x,this.y, 36*dpr); for(const u of allies){ if(u.team!==this.team||u.dead) continue; const r=u.radius+this.radius; if(dist2(this.x,this.y,u.x,u.y) <= r*r){ const amt=this.heal||12; u.hp = Math.min(u.maxHp, u.hp + amt); game.texts.push(new FloatingText(u.x,u.y-12*dpr,'+'+Math.round(amt),'#7bffb2')); for(let i=0;i<8;i++) game.spawnParticle(u.x,u.y,rand(-60,60),rand(-60,30),0.5+Math.random()*0.6,'#7bffb2',2*dpr); this.dead=true; break; } }
+        };
+        game.projectiles.push(p);
+      } else if(this.type==='artillery'){
+        if(!this.target) return; const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy)+1e-6; const sp=220*dpr; const vx=dx/d*sp; let vy=dy/d*sp - 200*dpr; // lobbed
+        const p=new Projectile(this.x,this.y,vx,vy,this.team,this.damage,null,sp); p.radius=5*dpr; p.trailMax=10; p.color='rgb(250,230,120)'; p.gz=520*dpr; p.maxAge=1.6;
+        p.update = function(dt, game){ this.age+=dt; if(this.age>this.maxAge){ if(this.onExplode) this.onExplode(game,this.x,this.y,this); this.dead=true; return; }
+          this.vy += (this.gz||0)*dt; this.trail.push([this.x,this.y]); if(this.trail.length>this.trailMax) this.trail.shift(); this.x+=this.vx*dt; this.y+=this.vy*dt;
+          const enemies=game.queryNearby(this.x,this.y, 42*dpr); for(const u of enemies){ if(u.team===this.team||u.dead) continue; const r=u.radius+this.radius; if(dist2(this.x,this.y,u.x,u.y) <= r*r){ if(this.onExplode) this.onExplode(game,this.x,this.y,this); this.dead=true; break; } }
+        };
+        p.onExplode=(game,ex,ey)=>{ const rad=60*dpr; for(const u of game.units){ if(u.dead||u.team===this.team) continue; if(dist2(ex,ey,u.x,u.y) <= (rad+u.radius)*(rad+u.radius)){ u.hit(this.damage+12, game, ex,ey); } } for(let i=0;i<36;i++) game.spawnParticle(ex,ey,rand(-200,200),rand(-200,200),0.6+Math.random()*0.6,'#ffe680',3*dpr); };
+        game.projectiles.push(p);
+      } else if(this.type==='ninja'){
+        if(!this.target) return; // vanish then blink behind target
+        this.vanish = 0.5; const ang=Math.atan2(this.target.y-this.y, this.target.x-this.x);
+        this.x = this.target.x - Math.cos(ang)* (this.target.radius+10*dpr);
+        this.y = this.target.y - Math.sin(ang)* (this.target.radius+10*dpr);
+        this.target.hit(this.damage*1.5, game, this.x, this.y);
+        for(let i=0;i<20;i++) game.spawnParticle(this.x,this.y,rand(-160,160),rand(-160,160),0.4,'#999999',2*dpr);
+      } else if(this.type==='summoner'){
+        // spawn 1-2 minions near self
+        const n = 1 + (Math.random()<0.5?1:0); for(let i=0;i<n;i++){ const ang=rand(0,TAU); const rx=this.x+Math.cos(ang)*24*dpr, ry=this.y+Math.sin(ang)*24*dpr; const m=game.spawnUnit('minion', this.team, rx, ry); m.target=this.target; }
+      } else if(this.type==='frost'){
+        if(!this.target) return; const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy)+1e-6; const sp=300*dpr; const vx=dx/d*sp, vy=dy/d*sp;
+        const p=new Projectile(this.x,this.y,vx,vy,this.team,this.damage,null,sp); p.radius=4*dpr; p.trailMax=14; p.color='rgb(180,220,255)';
+        p.onExplode=(game,ex,ey)=>{ game.addSlowField(ex,ey, 70*dpr, 2.5, this.team, 0.5); for(let i=0;i<22;i++) game.spawnParticle(ex,ey,rand(-120,120),rand(-120,120),0.5,'#bde0ff',2*dpr); };
+        game.projectiles.push(p);
+      } else if(this.type==='engineer'){
+        if(this.hasTurret) return; const ang=rand(0,TAU); const rx=this.x+Math.cos(ang)*18*dpr, ry=this.y+Math.sin(ang)*18*dpr; const t=game.spawnUnit('turret', this.team, rx, ry); this.hasTurret=true;
+      } else if(this.type==='turret'){
+        // Turret hanya menembak, tidak bergerak
+        if(!this.target) return; const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy)+1e-6; const sp=380*dpr; const vx=dx/d*sp, vy=dy/d*sp;
+        const pr=new Projectile(this.x, this.y, vx, vy, this.team, this.damage, null, sp); pr.color='rgb(255,200,80)'; pr.radius=3*dpr; game.projectiles.push(pr);
+      }
+    }
+    integrate(game, dt){
+      if(this.dead){ return; }
+      // separation + mild cohesion
+      const neigh = game.queryNearby(this.x,this.y, 44*dpr);
+      let fx=0, fy=0, cx=0, cy=0, cnt=0;
+      for(const n of neigh){ if(n===this||n.dead) continue; const dx=this.x-n.x, dy=this.y-n.y; const d2=dx*dx+dy*dy; const r=this.radius+n.radius; if(d2<r*r){ const d=Math.sqrt(d2)+1e-6; const push=(r-d)*0.35; fx+=dx/d*push*8; fy+=dy/d*push*8; }
+        if(n.team===this.team){ cx+=n.x; cy+=n.y; cnt++; }
+      }
+      if(cnt>0){ cx/=cnt; cy/=cnt; this.vx += (cx-this.x)*0.0008; this.vy += (cy-this.y)*0.0008; }
+      this.vx += fx; this.vy += fy; if(!this.immuneKnock){ this.vx*=0.996; this.vy*=0.996; }
+
+      // move
+      const maxVel = this.speed*1.2; const v=Math.hypot(this.vx,this.vy); if(v>maxVel){ this.vx*=maxVel/v; this.vy*=maxVel/v; }
+      this.x += this.vx*dt; this.y += this.vy*dt;
+      // environmental collisions: rivers + walls are impassable (push out strongly)
+      const rpush = game.riverPush(this.x,this.y); if(rpush){ this.x+=rpush.x; this.y+=rpush.y; this.vx*=0.1; this.vy*=0.1; }
+      const wpush = game.wallPush(this.x,this.y); if(wpush){ this.x+=wpush.x; this.y+=wpush.y; this.vx*=0.1; this.vy*=0.1; }
+      // bounds
+      const w=canvas.width, h=canvas.height; const r=this.radius; if(this.x<r){ this.x=r; this.vx*=-0.2; } if(this.x>w-r){ this.x=w-r; this.vx*=-0.2; }
+      if(this.y<r){ this.y=r; this.vy*=-0.2; } if(this.y>h-r){ this.y=h-r; this.vy*=-0.2; }
+
+      if(this.flash>0) this.flash-=dt;
+    }
+    draw(g){
+      // corpse
+      if(this.corpse && this.dead){
+        g.save(); g.globalAlpha=0.8; g.fillStyle='rgba(120,120,130,0.5)'; g.beginPath(); g.arc(this.x, this.y, this.radius*0.95, 0, TAU); g.fill(); g.restore();
+        return;
+      }
+      // body glow
+      g.save();
+      g.shadowColor = this.color; g.shadowBlur = 12*dpr; g.fillStyle = this.color;
+      g.beginPath(); g.arc(this.x, this.y, this.radius, 0, TAU); g.fill();
+      g.restore();
+
+      // icon
+      drawIcon(g, this.type, this.x, this.y, this.radius*0.9, '#ffffff');
+
+      // ninja vanish visual
+      if(this.type==='ninja' && this.vanish>0){ g.save(); g.globalAlpha=0.6; g.strokeStyle='rgba(200,200,200,0.6)'; g.beginPath(); g.arc(this.x,this.y, this.radius*1.2, 0, TAU); g.stroke(); g.restore(); this.vanish-=0.03; }
+
+      // hit flash overlay
+      if(this.flash>0){ g.globalAlpha = clamp(this.flash/0.12, 0, 1); g.fillStyle='#ffffff'; g.beginPath(); g.arc(this.x,this.y,this.radius,0,TAU); g.fill(); g.globalAlpha=1; }
+
+      // health bar
+      const hw=this.radius*2, hh=4*dpr; const px=this.x-hw/2, py=this.y-this.radius-10*dpr;
+      g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(px,py,hw,hh); g.fillStyle=this.color; g.fillRect(px,py, hw*(this.hp/this.maxHp), hh);
+      if(this.shield>0){ g.fillStyle='rgba(165,243,252,0.8)'; g.fillRect(px,py-4*dpr, hw*(this.shield/80), 2*dpr); }
+    }
+  }
+
+  // ---------- Spatial Hash Grid ----------
+  class SpatialHash{
+    constructor(cell){ this.cell=cell; this.map=new Map(); }
+    key(ix,iy){ return ix+','+iy; }
+    hash(x,y){ return [Math.floor(x/this.cell), Math.floor(y/this.cell)]; }
+    clear(){ this.map.clear(); }
+    insert(u){ const [ix,iy]=this.hash(u.x,u.y); const k=this.key(ix,iy); if(!this.map.has(k)) this.map.set(k,[]); this.map.get(k).push(u); }
+    query(x,y,r){ const c=this.cell; const [ix,iy]=this.hash(x,y); const out=[]; for(let yy=iy-1; yy<=iy+1; yy++){ for(let xx=ix-1; xx<=ix+1; xx++){ const arr=this.map.get(this.key(xx,yy)); if(arr) out.push(...arr); } } return out; }
+  }
+
+  // ---------- Game ----------
+  class Game{
+    constructor(){
+      this.units=[]; this.projectiles=[]; this.particles=[]; this.texts=[]; this.grid=new SpatialHash(48*dpr);
+      this.last=performance.now();
+      this.blueAlive=0; this.redAlive=0;
+      this.rivers=[]; this.walls=[]; this.bridges=[]; // obstacles as circles {x,y,r,life?}
+      this.shieldWalls=[]; // {x,y,r,hp,maxHp,team,dead}
+      this.slowFields=[]; // {x,y,r,life,team,slow}
+      this.pathCache=new Map(); this.pathCacheTime=0;
+    }
+    spawnUnit(type, team, x, y){
+      const u=new Unit(type, team, x, y); this.units.push(u); return u;
+    }
+    spawnParticle(x,y, vx,vy, life, color, size){ if(this.particles.length>1500) return; this.particles.push(new Particle(x,y,vx,vy,life,color,size)); }
+    queryNearby(x,y,r){ return this.grid.query(x,y,r); }
+    addObstacle(type,x,y,r=18*dpr,life=null){ const arr = type==='river'? this.rivers: this.walls; arr.push({x,y,r,life}); if(arr.length>800) arr.shift(); this.pathCache.clear(); }
+    addShieldWall(team,x,y,r=20*dpr){ this.shieldWalls.push({x,y,r,hp:200,maxHp:200,team,dead:false,flash:0}); if(this.shieldWalls.length>200) this.shieldWalls.shift(); this.pathCache.clear(); }
+    eraseObstacle(x,y,rad){ function removeNear(arr){ for(let i=arr.length-1;i>=0;i--){ if(dist2(x,y,arr[i].x,arr[i].y) < (rad+arr[i].r)*(rad+arr[i].r)){ arr.splice(i,1); } } } removeNear(this.rivers); removeNear(this.walls); for(let i=this.shieldWalls.length-1;i>=0;i--){ if(dist2(x,y,this.shieldWalls[i].x,this.shieldWalls[i].y) < (rad+this.shieldWalls[i].r)*(rad+this.shieldWalls[i].r)){ this.shieldWalls.splice(i,1); } } this.pathCache.clear(); }
+    addBridge(x,y,r=26*dpr){ this.bridges.push({x,y,r}); if(this.bridges.length>400) this.bridges.shift(); }
+    onBridge(x,y){ for(const b of this.bridges){ if(dist2(x,y,b.x,b.y) <= b.r*b.r) return true; } return false; }
+    riverPush(x,y){ if(this.onBridge(x,y)) return null; for(const o of this.rivers){ const dx=x-o.x, dy=y-o.y; const d=Math.hypot(dx,dy); if(d<o.r){ const k=(o.r-d)+1.5; return {x:dx/d*k, y:dy/d*k}; } } return null; }
+    wallPush(x,y){ 
+      for(const o of this.walls){ const dx=x-o.x, dy=y-o.y; const d=Math.hypot(dx,dy); if(d<o.r){ const k=(o.r-d)+1.5; return {x:dx/d*k, y:dy/d*k}; } } 
+      for(const sw of this.shieldWalls){ if(sw.dead) continue; const dx=x-sw.x, dy=y-sw.y; const d=Math.hypot(dx,dy); if(d<sw.r){ const k=(sw.r-d)+1.5; return {x:dx/d*k, y:dy/d*k}; } }
+      return null; 
+    }
+    projectileBlocked(x,y){ for(const o of this.walls){ const dx=x-o.x, dy=y-o.y; if(dx*dx+dy*dy <= o.r*o.r) return true; } return false; }
+    addSlowField(x,y,r,life,team,slow){ this.slowFields.push({x,y,r,life,team,slow}); if(this.slowFields.length>200) this.slowFields.shift(); }
+    isPathBlocked(sx,sy,ex,ey){
+      // Cek apakah ada obstacle di jalur langsung dengan sampling
+      const steps=12; 
+      const checkRadius = 25*dpr; // radius deteksi lebih besar
+      for(let i=1;i<=steps;i++){ 
+        const t=i/steps; 
+        const px=sx+(ex-sx)*t, py=sy+(ey-sy)*t;
+        for(const w of this.walls){ if(dist2(px,py,w.x,w.y) <= (w.r+checkRadius)*(w.r+checkRadius)) return true; }
+        for(const sw of this.shieldWalls){ if(sw.dead) continue; if(dist2(px,py,sw.x,sw.y) <= (sw.r+checkRadius)*(sw.r+checkRadius)) return true; }
+        for(const r of this.rivers){ if(dist2(px,py,r.x,r.y) <= (r.r+checkRadius)*(r.r+checkRadius)) return true; }
+      }
+      return false;
+    }
+    findPath(sx,sy,ex,ey){
+      // Simple A* pathfinding dengan grid kasar
+      const key=`${Math.round(sx/80)},${Math.round(sy/80)}-${Math.round(ex/80)},${Math.round(ey/80)}`;
+      if(this.pathCache.has(key)){ const cached=this.pathCache.get(key); if(cached.time>this.pathCacheTime-1.0) return cached.path; }
+      const cellSize=35*dpr; const gw=Math.ceil(canvas.width/cellSize), gh=Math.ceil(canvas.height/cellSize);
+      const toGrid=(x,y)=>({gx:Math.floor(x/cellSize), gy:Math.floor(y/cellSize)});
+      const fromGrid=(gx,gy)=>({x:(gx+0.5)*cellSize, y:(gy+0.5)*cellSize});
+      const isBlocked=(gx,gy)=>{ 
+        if(gx<0||gy<0||gx>=gw||gy>=gh) return true; 
+        const p=fromGrid(gx,gy); 
+        for(const w of this.walls){ if(dist2(p.x,p.y,w.x,w.y)<=(w.r+cellSize*0.5)*(w.r+cellSize*0.5)) return true; } 
+        for(const sw of this.shieldWalls){ if(sw.dead) continue; if(dist2(p.x,p.y,sw.x,sw.y)<=(sw.r+cellSize*0.5)*(sw.r+cellSize*0.5)) return true; } 
+        for(const r of this.rivers){ if(dist2(p.x,p.y,r.x,r.y)<=(r.r+cellSize*0.5)*(r.r+cellSize*0.5)) return true; }
+        return false; 
+      };
+      const start=toGrid(sx,sy), end=toGrid(ex,ey); 
+      if(start.gx===end.gx && start.gy===end.gy) return null;
+      if(isBlocked(start.gx, start.gy)){ 
+        // Cari cell terdekat yang tidak blocked
+        for(let r=1;r<=3;r++){ for(let dx=-r;dx<=r;dx++){ for(let dy=-r;dy<=r;dy++){ 
+          if(!isBlocked(start.gx+dx,start.gy+dy)){ start.gx+=dx; start.gy+=dy; break; }
+        }}}
+      }
+      const open=[{...start, g:0, h:Math.hypot(end.gx-start.gx, end.gy-start.gy), parent:null}]; 
+      const closed=new Set(); 
+      const key2=(gx,gy)=>gx+','+gy;
+      let found=null; const maxIter=300; let iter=0;
+      while(open.length>0 && iter++<maxIter){ 
+        open.sort((a,b)=>(a.g+a.h)-(b.g+b.h)); 
+        const cur=open.shift(); 
+        if(Math.abs(cur.gx-end.gx)<=1 && Math.abs(cur.gy-end.gy)<=1){ found=cur; break; }
+        closed.add(key2(cur.gx,cur.gy)); 
+        const dirs=[[0,1],[1,0],[0,-1],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+        for(const [dx,dy] of dirs){ 
+          const ngx=cur.gx+dx, ngy=cur.gy+dy; 
+          if(isBlocked(ngx,ngy)) continue; 
+          const nk=key2(ngx,ngy); 
+          if(closed.has(nk)) continue;
+          const ng=cur.g+Math.hypot(dx,dy); 
+          const nh=Math.hypot(end.gx-ngx, end.gy-ngy); 
+          const exist=open.find(n=>n.gx===ngx&&n.gy===ngy);
+          if(!exist){ open.push({gx:ngx,gy:ngy,g:ng,h:nh,parent:cur}); } 
+          else if(ng<exist.g){ exist.g=ng; exist.parent=cur; }
+        }
+      }
+      if(!found) return null; 
+      const path=[]; let n=found; 
+      while(n){ const p=fromGrid(n.gx,n.gy); path.unshift(p); n=n.parent; }
+      // Simplify path: hapus waypoint yang tidak perlu
+      if(path.length>2){
+        const simplified=[path[0]];
+        for(let i=1;i<path.length-1;i++){
+          const prev=simplified[simplified.length-1];
+          const next=path[i+1];
+          if(!this.isPathBlocked(prev.x,prev.y,next.x,next.y)){ continue; }
+          simplified.push(path[i]);
+        }
+        simplified.push(path[path.length-1]);
+        this.pathCache.set(key, {path:simplified, time:this.pathCacheTime}); 
+        return simplified;
+      }
+      this.pathCache.set(key, {path, time:this.pathCacheTime}); 
+      return path;
+    }
+    update(dt){
+      this.pathCacheTime+=dt;
+      // rebuild grid
+      this.grid.clear(); for(const u of this.units){ if(!u.dead) this.grid.insert(u); }
+      // AI think
+      for(const u of this.units){ u.think(this, dt); }
+      // physics integrate
+      for(const u of this.units){ u.integrate(this, dt); }
+      // shieldWalls update
+      for(const sw of this.shieldWalls){ if(sw.flash>0) sw.flash-=dt; }
+      // projectiles
+      for(const p of this.projectiles){ if(!p.dead){ p.update(dt, this); if(!p.dead && this.projectileBlocked(p.x,p.y)){ if(p.onExplode) p.onExplode(this,p.x,p.y,p); p.dead=true; } 
+        // Check collision with shieldWalls
+        if(!p.dead){ for(const sw of this.shieldWalls){ if(sw.dead || sw.team===p.team) continue; if(dist2(p.x,p.y,sw.x,sw.y) <= (sw.r+p.radius)*(sw.r+p.radius)){ sw.hp-=p.dmg; sw.flash=0.1; this.texts.push(new FloatingText(sw.x,sw.y-12*dpr,'-'+Math.round(p.dmg),TEAM[sw.team].color)); for(let i=0;i<4;i++) this.spawnParticle(p.x,p.y,rand(-60,60),rand(-60,30),0.4,'#ffffff',2*dpr); if(sw.hp<=0){ sw.dead=true; for(let i=0;i<30;i++) this.spawnParticle(sw.x,sw.y,rand(-180,180),rand(-180,180),0.8,TEAM[sw.team].blood,3*dpr); this.pathCache.clear(); } p.dead=true; break; } } }
+      } }
+      // particles & texts
+      for(const q of this.particles){ q.update(dt); }
+      // slow fields decay
+      for(const s of this.slowFields){ s.life-=dt; }
+      for(const t of this.texts){ t.update(dt); }
+      // cull
+      this.projectiles = this.projectiles.filter(p=>!p.dead);
+      this.particles = this.particles.filter(p=>p.t<p.life);
+      this.slowFields = this.slowFields.filter(s=>s.life>0);
+      this.texts = this.texts.filter(t=>t.t<t.life);
+      this.shieldWalls = this.shieldWalls.filter(sw=>!sw.dead);
+
+      // stats
+      let blue=0, red=0; for(const u of this.units){ if(!u.dead){ if(u.team==='blue') blue++; else red++; } }
+      this.blueAlive=blue; this.redAlive=red; blueCountEl.textContent=blue.toString(); redCountEl.textContent=red.toString();
+    }
+    draw(g){
+      g.clearRect(0,0,canvas.width, canvas.height);
+      // obstacles render
+      // rivers
+      for(const o of this.rivers){ g.save(); g.globalAlpha=0.28; g.fillStyle='rgba(42,224,255,0.8)'; g.shadowColor='rgba(42,224,255,0.8)'; g.shadowBlur=10*dpr; g.beginPath(); g.arc(o.x,o.y,o.r,0,TAU); g.fill(); g.restore(); }
+      // bridges
+      for(const b of this.bridges){ g.save(); g.globalAlpha=0.9; g.fillStyle='rgba(140,120,80,0.85)'; g.shadowColor='rgba(140,120,80,0.6)'; g.shadowBlur=4*dpr; g.beginPath(); g.arc(b.x,b.y,b.r,0,TAU); g.fill(); g.restore(); }
+      // walls
+      for(const o of this.walls){ g.save(); g.globalAlpha=0.85; g.fillStyle='rgba(255,255,255,0.8)'; g.shadowColor='rgba(255,255,255,0.6)'; g.shadowBlur=6*dpr; g.beginPath(); g.arc(o.x,o.y,o.r,0,TAU); g.fill(); g.restore(); if(o.life){ o.life-=this.dt; if(o.life<=0){ this.walls.splice(this.walls.indexOf(o),1); } } }
+      // shieldWalls
+      for(const sw of this.shieldWalls){ if(sw.dead) continue; g.save(); const col=TEAM[sw.team].color; g.fillStyle=col; g.shadowColor=col; g.shadowBlur=10*dpr; g.globalAlpha=0.7; g.beginPath(); g.arc(sw.x,sw.y,sw.r,0,TAU); g.fill(); g.restore(); 
+        // HP bar
+        const hw=sw.r*2.2, hh=5*dpr; const px=sw.x-hw/2, py=sw.y-sw.r-12*dpr; g.fillStyle='rgba(0,0,0,0.6)'; g.fillRect(px,py,hw,hh); g.fillStyle=col; g.fillRect(px,py, hw*(sw.hp/sw.maxHp), hh);
+        // flash
+        if(sw.flash>0){ g.globalAlpha=clamp(sw.flash/0.1,0,1); g.fillStyle='#ffffff'; g.beginPath(); g.arc(sw.x,sw.y,sw.r,0,TAU); g.fill(); g.globalAlpha=1; }
+      }
+      // slow fields
+      for(const s of this.slowFields){ g.save(); g.globalAlpha=0.18; g.fillStyle='rgba(180,220,255,0.8)'; g.beginPath(); g.arc(s.x,s.y,s.r,0,TAU); g.fill(); g.restore(); }
+      // corpses first (dead units flagged as corpse)
+      for(const u of this.units){ if(u.dead) u.draw(g); }
+      // trails behind units
+      for(const p of this.projectiles){ p.draw(g); }
+      // living units on top
+      for(const u of this.units){ if(!u.dead) u.draw(g); }
+      // particles and texts on top
+      for(const q of this.particles){ q.draw(g); }
+      for(const t of this.texts){ t.draw(g); }
+    }
+  }
+
+  const game = new Game();
+
+  // seed more units for demo
+  for(let i=0;i<36;i++){
+    game.spawnUnit('mauler','blue', rand(100, window.innerWidth-100)*dpr, rand(150, window.innerHeight-150)*dpr);
+    game.spawnUnit('mauler','red', rand(100, window.innerWidth-100)*dpr, rand(150, window.innerHeight-150)*dpr);
+  }
+  for(let i=0;i<12;i++){
+    game.spawnUnit('sniper','blue', rand(100, window.innerWidth-100)*dpr, rand(150, window.innerHeight-150)*dpr);
+    game.spawnUnit('sniper','red', rand(100, window.innerWidth-100)*dpr, rand(150, window.innerHeight-150)*dpr);
+  }
+  for(let i=0;i<10;i++){
+    game.spawnUnit('warlock','blue', rand(100, window.innerWidth-100)*dpr, rand(150, window.innerHeight-150)*dpr);
+    game.spawnUnit('warlock','red', rand(100, window.innerWidth-100)*dpr, rand(150, window.innerHeight-150)*dpr);
+  }
+  for(let i=0;i<6;i++){
+    game.spawnUnit('spearman','blue', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+    game.spawnUnit('spearman','red', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+  }
+  for(let i=0;i<6;i++){
+    game.spawnUnit('bomber','blue', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+    game.spawnUnit('bomber','red', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+  }
+  for(let i=0;i<6;i++){
+    game.spawnUnit('healer','blue', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+    game.spawnUnit('healer','red', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+  }
+  for(let i=0;i<6;i++){
+    game.spawnUnit('rogue','blue', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+    game.spawnUnit('rogue','red', rand(200, window.innerWidth-200)*dpr, rand(200, window.innerHeight-200)*dpr);
+  }
+
+  // ---------- Loop ----------
+  let run = false;
+  function toggleRun(){ run=!run; }
+  function resetBattle(){
+    game.units.length=0; game.projectiles.length=0; game.particles.length=0; game.texts.length=0; game.shieldWalls.length=0; game.pathCache.clear(); run=false;
+  }
+
+  function frame(t){
+    const now=t; let dt=(now-game.last)/1000; game.last=now; dt=Math.min(0.033, Math.max(0.001, dt)); game.dt=dt;
+    if(run) game.update(dt);
+    game.draw(ctx);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
