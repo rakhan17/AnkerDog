@@ -1328,49 +1328,46 @@
       this.retarget = 0.35 + Math.random()*0.25;
       let best=null, bd=1e12;
       
-      // Check ALL targets with proper priority
-      // 1. Nuclear bases (highest priority) - ABSOLUTE DETECTION RANGE
-      const baseDetectionRange = 500 * 500; // 500px absolute detection range
+      // Check ALL targets with proper priority - NO DISTANCE LIMIT!
+      // Units will now chase enemies across the entire map
+      
+      // 1. Nuclear bases (highest priority) - UNLIMITED RANGE
       for(const base of game.nuclearBases){ 
         if(base.team===this.team||base.dead) continue; 
         const d=dist2(this.x,this.y,base.x,base.y); 
-        if(d <= baseDetectionRange){ // ABSOLUTE range, not dependent on unit range
-          best=base; 
-          console.log(`UNIT ${this.type} TARGETING NUCLEAR BASE! Distance: ${Math.sqrt(d)}`);
-          break; // Stop searching - found nuclear base
+        if(d < bd){ // Find closest, no range limit
+          bd=d; best=base; 
         } 
       }
       
-      // 2. Shield walls (high priority)
+      // 2. Shield walls (high priority) - UNLIMITED RANGE
       if(!best){
         for(const sw of game.shieldWalls){ 
           if(sw.team===this.team||sw.dead) continue; 
           const d=dist2(this.x,this.y,sw.x,sw.y); 
-          if(d<bd && d<=this.range*this.range*8){ // Large detection range for structures
+          if(d<bd){ // Find closest, no range limit
             bd=d; best=sw; 
-            console.log(`UNIT ${this.type} TARGETING SHIELD WALL! Distance: ${Math.sqrt(d)}`);
           } 
         }
       }
       
-      // 3. Turrets (high priority)
+      // 3. Turrets (high priority) - UNLIMITED RANGE
       if(!best){
         for(const turret of game.turrets){ 
           if(turret.team===this.team||turret.dead) continue; 
           const d=dist2(this.x,this.y,turret.x,turret.y); 
-          if(d<bd && d<=this.range*this.range*8){ // Large detection range for structures
+          if(d<bd){ // Find closest, no range limit
             bd=d; best=turret; 
-            console.log(`UNIT ${this.type} TARGETING TURRET! Distance: ${Math.sqrt(d)}`);
           } 
         }
       }
       
-      // 4. Units (normal priority)
+      // 4. Units (normal priority) - UNLIMITED RANGE
       if(!best){
         for(const u of game.units){ 
           if(u.team===this.team||u.dead) continue; 
           const d=dist2(this.x,this.y,u.x,u.y); 
-          if(d<bd && d<=this.range*this.range*4){ 
+          if(d<bd){ // Find closest, no range limit
             bd=d; best=u; 
           } 
         }
