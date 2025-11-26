@@ -60,6 +60,12 @@
     .stats{margin-left:auto; display:flex; align-items:center; gap:14px; padding:8px 12px; border-radius:12px; border:1px solid var(--hud-stroke); background: rgba(255,255,255,0.04)}
     .stat{font-weight:800; font-size:12px; letter-spacing:.3px;}
     .stat .n{font-size:14px; padding-left:6px}
+    .spawn-control{display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; background: rgba(255,255,255,0.05); color:var(--text); font-size:11px; font-weight:600;}
+    .spawn-control label{white-space:nowrap;}
+    .spawn-control input{background: rgba(255,255,255,0.1); border:1px solid var(--hud-stroke); border-radius:4px; color:var(--text); text-align:center;}
+    .bottom-stats{position:absolute; bottom:12px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:20px; padding:10px 20px; border-radius:12px; border:1px solid var(--hud-stroke); background: rgba(0,0,0,0.7); backdrop-filter: blur(10px); z-index:10;}
+    .bottom-stats .stat{font-weight:800; font-size:13px; letter-spacing:.3px;}
+    .bottom-stats .stat .n{font-size:15px; padding-left:6px; font-weight:900;}
 
     .help{
       position:absolute; bottom:12px; left:12px; right:12px;
@@ -97,6 +103,13 @@
         <div class="btn" data-unit="shield">Shield</div>
         <div class="btn" data-unit="artillery">Artillery</div>
         <div class="btn" data-unit="berserker">Berserker</div>
+        <div class="btn" data-unit="lord">Lord</div>
+        <div class="btn" data-unit="cavalry">Cavalry</div>
+        <div class="btn" data-unit="builder">Builder</div>
+        <div class="btn" data-unit="monster">Monster</div>
+        <div class="btn" data-unit="monsterking">Monster King</div>
+        <div class="btn" data-unit="loid">Loid</div>
+        <div class="btn" data-unit="lance">Lance</div>
       </div>
       <div class="group" id="teamGroup">
         <div class="btn blue" data-team="blue">Blue</div>
@@ -106,21 +119,27 @@
         <div class="btn" data-action="start">START WAR</div>
         <div class="btn" data-action="pause">PAUSE</div>
         <div class="btn" data-action="reset">RESET BATTLE</div>
+        <div class="spawn-control">
+          <label>Spawn Count:</label>
+          <input type="number" id="spawnCount" min="1" max="50" value="1" style="width:60px; padding:4px; margin-left:8px;">
+        </div>
       </div>
       <div class="group" id="buildGroup">
         <div class="btn" data-build="river">River</div>
         <div class="btn" data-build="wall">Wall</div>
         <div class="btn" data-build="shieldwall">ShieldWall</div>
         <div class="btn" data-build="turret">Turret</div>
+        <div class="btn" data-build="nuclearbase">Nuclear Base</div>
         <div class="btn" data-build="erase">Erase</div>
         <div class="btn" data-build="bridge">Bridge</div>
         <div class="btn" data-build="linewall">LineWall</div>
       </div>
     </div>
-    <div class="stats" id="stats">
-      <div class="stat" style="color:var(--blue)">Blue Alive:<span class="n" id="blueCount">0</span></div>
-      <div class="stat" style="color:var(--red)">Red Alive:<span class="n" id="redCount">0</span></div>
-    </div>
+  </div>
+  <div class="bottom-stats" id="bottomStats">
+    <div class="stat" style="color:var(--blue)">Blue Alive:<span class="n" id="blueCount">0</span></div>
+    <div class="stat" style="color:var(--red)">Red Alive:<span class="n" id="redCount">0</span></div>
+    <div class="stat" style="color:var(--text)">FPS:<span class="n" id="fpsCount">60</span></div>
   </div>
   <div class="help">
     <div class="help-row">
@@ -178,6 +197,17 @@
   const clamp=(v,mi,ma)=>v<mi?mi:v>ma?ma:v;
   const dist2=(ax,ay,bx,by)=>{ const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; };
   const lerp=(a,b,t)=>a+(b-a)*t;
+  
+  // Distance from point to line segment
+  const distPointToLineSegment = (px, py, x1, y1, x2, y2) => {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.sqrt(dist2(px, py, x1, y1));
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const projX = x1 + t * dx, projY = y1 + t * dy;
+    return Math.sqrt(dist2(px, py, projX, projY));
+  };
 
   // ---------- Canvas Setup ----------
   const bg = document.getElementById('bg');
@@ -193,7 +223,8 @@
     targetZoom: 1.0,
     minZoom: 0.3,
     maxZoom: 3.0,
-    smoothing: 0.15
+    smoothing: 0.15,
+    manualControl: false // flag untuk manual pan control
   };
 
   function resize(){
@@ -255,48 +286,55 @@
     [...teamGroup.children].forEach(b=>b.classList.toggle('active', b.dataset.team===UI.selectedTeam));
   }
   unitGroup.addEventListener('click', e=>{
-    const b = e.target.closest('.btn'); if(!b) return; UI.selectedUnit = b.dataset.unit; UI.buildMode='none'; updateUnitActive(); updateBuildActive();
+    const b = e.target.closest('.btn'); if(!b) return; UI.selectedUnit = b.dataset.unit; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null;
   });
   teamGroup.addEventListener('click', e=>{
     const b = e.target.closest('.btn'); if(!b) return; UI.selectedTeam = b.dataset.team; updateTeamActive();
   });
   const buildGroup = document.getElementById('buildGroup');
   function updateBuildActive(){ if(!buildGroup) return; [...buildGroup.children].forEach(b=>b.classList.toggle('active', b.dataset.build===UI.buildMode)); }
-  buildGroup.addEventListener('click', e=>{ const b=e.target.closest('.btn'); if(!b) return; UI.buildMode=b.dataset.build; updateBuildActive(); });
+  buildGroup.addEventListener('click', e=>{ const b=e.target.closest('.btn'); if(!b) return; UI.buildMode=b.dataset.build; updateBuildActive(); if(UI.buildMode !== 'linewall'){ pointer.lx=null; pointer.ly=null; } });
   updateUnitActive(); updateTeamActive();
   updateBuildActive();
 
   document.addEventListener('keydown', e=>{
     if(e.target && ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
-    if(e.key==='1'){ UI.selectedUnit='mauler'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='2'){ UI.selectedUnit='sniper'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='3'){ UI.selectedUnit='warlock'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='4'){ UI.selectedUnit='anker'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='5'){ UI.selectedUnit='spearman'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='6'){ UI.selectedUnit='bomber'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='7'){ UI.selectedUnit='healer'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='8'){ UI.selectedUnit='rogue'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='9'){ UI.selectedUnit='saber'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='0'){ UI.selectedUnit='ninja'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='g' || e.key==='G'){ UI.selectedUnit='shield'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='q' || e.key==='Q'){ UI.selectedUnit='artillery'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='z' || e.key==='Z'){ UI.selectedUnit='berserker'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='u' || e.key==='U'){ UI.selectedUnit='summoner'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='f' || e.key==='F'){ UI.selectedUnit='frost'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
-    if(e.key==='j' || e.key==='J'){ UI.selectedUnit='engineer'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); }
+    if(e.key==='1'){ UI.selectedUnit='mauler'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='2'){ UI.selectedUnit='sniper'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='3'){ UI.selectedUnit='warlock'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='4'){ UI.selectedUnit='anker'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='5'){ UI.selectedUnit='spearman'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='6'){ UI.selectedUnit='bomber'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='7'){ UI.selectedUnit='healer'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='8'){ UI.selectedUnit='rogue'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='9'){ UI.selectedUnit='saber'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='0'){ UI.selectedUnit='ninja'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='g' || e.key==='G'){ UI.selectedUnit='shield'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='q' || e.key==='Q'){ UI.selectedUnit='artillery'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='z' || e.key==='Z'){ UI.selectedUnit='berserker'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='h' || e.key==='H'){ UI.selectedUnit='lord'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='c' || e.key==='C'){ UI.selectedUnit='cavalry'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='d' || e.key==='D'){ UI.selectedUnit='builder'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='m' || e.key==='M'){ UI.selectedUnit='monster'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='k' || e.key==='K'){ UI.selectedUnit='monsterking'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='l' || e.key==='L'){ UI.selectedUnit='loid'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='a' || e.key==='A'){ UI.selectedUnit='lance'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='u' || e.key==='U'){ UI.selectedUnit='summoner'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='f' || e.key==='F'){ UI.selectedUnit='frost'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='j' || e.key==='J'){ UI.selectedUnit='engineer'; UI.buildMode='none'; updateUnitActive(); updateBuildActive(); pointer.lx=null; pointer.ly=null; }
     if(e.key==='b' || e.key==='B'){ UI.selectedTeam='blue'; updateTeamActive(); }
     if(e.key==='r' || e.key==='R'){ UI.selectedTeam='red'; updateTeamActive(); }
     if(e.code==='Space'){ toggleRun(); e.preventDefault(); }
     if(e.key==='x' || e.key==='X'){ resetBattle(); }
     if(e.key==='Shift'){ UI.painting = true; }
-    if(e.key==='v' || e.key==='V'){ UI.buildMode='river'; updateBuildActive(); }
-    if(e.key==='w' || e.key==='W'){ UI.buildMode='wall'; updateBuildActive(); }
-    if(e.key==='e' || e.key==='E'){ UI.buildMode='erase'; updateBuildActive(); }
-    if(e.key==='n' || e.key==='N'){ UI.buildMode='none'; updateBuildActive(); }
-    if(e.key==='k' || e.key==='K'){ UI.buildMode='bridge'; updateBuildActive(); }
-    if(e.key==='l' || e.key==='L'){ UI.buildMode='linewall'; updateBuildActive(); }
-    if(e.key==='s' || e.key==='S'){ UI.buildMode='shieldwall'; updateBuildActive(); }
-    if(e.key==='t' || e.key==='T'){ UI.buildMode='turret'; updateBuildActive(); }
+    if(e.key==='v' || e.key==='V'){ UI.buildMode='river'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='w' || e.key==='W'){ UI.buildMode='wall'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='e' || e.key==='E'){ UI.buildMode='erase'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='n' || e.key==='N'){ UI.buildMode='none'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='k' || e.key==='K'){ UI.buildMode='bridge'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='l' || e.key==='L'){ UI.buildMode='linewall'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='s' || e.key==='S'){ UI.buildMode='shieldwall'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
+    if(e.key==='t' || e.key==='T'){ UI.buildMode='turret'; updateBuildActive(); pointer.lx=null; pointer.ly=null; }
   });
   document.addEventListener('keyup', e=>{ if(e.key==='Shift'){ UI.painting = false; } });
   document.addEventListener('wheel', e=>{ UI.paintDensity = clamp(UI.paintDensity + (e.deltaY<0?1:-1), 1, 10); });
@@ -328,12 +366,22 @@
       pointer.panMode=true; 
       pointer.panStartX=camera.x; 
       pointer.panStartY=camera.y;
+      camera.manualControl = true; // Activate manual control
       e.preventDefault();
     } else {
       spawnAtEvent(e, true); 
     }
   });
-  canvas.addEventListener('mouseup', ()=>{ pointer.down=false; pointer.panMode=false; });
+  canvas.addEventListener('mouseup', ()=>{ 
+    pointer.down=false; 
+    pointer.panMode=false;
+    // Return to auto-follow after 3 seconds of no manual control
+    setTimeout(() => {
+      if(!pointer.panMode) {
+        camera.manualControl = false;
+      }
+    }, 3000);
+  });
   canvas.addEventListener('mouseleave', ()=>{ pointer.down=false; pointer.panMode=false; });
   canvas.addEventListener('mousemove', e=>{ 
     const mx = e.offsetX*dpr, my = e.offsetY*dpr;
@@ -373,17 +421,45 @@
   function spawnAtEvent(e, burst){
     const world = screenToWorld(e.offsetX*dpr, e.offsetY*dpr);
     const x = world.x, y = world.y;
-    if(UI.buildMode==='river'){ const n= burst?2:1; for(let i=0;i<n;i++) game.addObstacle('river', x+rand(-6,6), y+rand(-6,6), 22); return; }
-    if(UI.buildMode==='wall'){ const n= burst?2:1; for(let i=0;i<n;i++) game.addObstacle('wall', x+rand(-4,4), y+rand(-4,4), 18); return; }
+    if(UI.buildMode==='river'){ 
+      if(pointer.lx!=null && pointer.ly!=null){ 
+        game.addObstacle('river', pointer.lx, pointer.ly, x, y, 12); 
+      }
+      pointer.lx=x; pointer.ly=y; 
+      return; 
+    }
+    if(UI.buildMode==='wall'){ 
+      if(pointer.lx!=null && pointer.ly!=null){ 
+        game.addObstacle('wall', pointer.lx, pointer.ly, x, y, 8); 
+      }
+      pointer.lx=x; pointer.ly=y; 
+      return; 
+    }
     if(UI.buildMode==='shieldwall'){ const n= burst?1:1; for(let i=0;i<n;i++) game.addShieldWall(UI.selectedTeam, x+rand(-4,4), y+rand(-4,4), 20); return; }
     if(UI.buildMode==='turret'){ game.spawnUnit('turret', UI.selectedTeam, x, y); return; }
-    if(UI.buildMode==='bridge'){ const n= burst?1:1; for(let i=0;i<n;i++) game.addBridge(x, y, 26); return; }
+    if(UI.buildMode==='nuclearbase'){ game.addNuclearBase(UI.selectedTeam, x, y); return; }
+    if(UI.buildMode==='erase'){ game.eraseObstacle(x,y, 28); return; }   
+    if(UI.buildMode==='bridge'){ 
+      if(pointer.lx!=null && pointer.ly!=null){ 
+        game.addBridge(pointer.lx, pointer.ly, x, y, 12); 
+      }
+      pointer.lx=x; pointer.ly=y; 
+      return; 
+    }
     if(UI.buildMode==='linewall'){
-      if(pointer.lx!=null){ const dx=x-pointer.lx, dy=y-pointer.ly; const steps=Math.max(1, Math.ceil(Math.hypot(dx,dy)/12)); for(let s=1;s<=steps;s++){ const px=pointer.lx+dx*s/steps, py=pointer.ly+dy*s/steps; game.addObstacle('wall', px, py, 16); } }
-      pointer.lx=x; pointer.ly=y; return;
+      if(pointer.lx!=null && pointer.ly!=null){ 
+        game.addObstacle('wall', pointer.lx, pointer.ly, x, y, 6); 
+      }
+      pointer.lx=x; pointer.ly=y; 
+      return; 
     } else { pointer.lx=null; pointer.ly=null; }
     if(UI.buildMode==='erase'){ game.eraseObstacle(x,y, 28); return; }
-    const count = burst? UI.paintDensity*2 : (UI.painting? UI.paintDensity*3 : UI.paintDensity);
+    
+    // Get spawn count from UI input
+    const spawnCountInput = document.getElementById('spawnCount');
+    const spawnCount = spawnCountInput ? parseInt(spawnCountInput.value) || 1 : 1;
+    
+    const count = burst ? spawnCount : (UI.painting ? spawnCount : spawnCount);
     for(let i=0;i<count;i++) game.spawnUnit(UI.selectedUnit, UI.selectedTeam, x+rand(-8,8), y+rand(-8,8));
   }
 
@@ -400,6 +476,612 @@
     constructor(x,y, text, color){ this.x=x; this.y=y; this.vy=-20; this.t=0; this.life=0.9; this.text=text; this.color=color; }
     update(dt){ this.t+=dt; this.y+=this.vy*dt; }
     draw(g){ const a=1-this.t/this.life; if(a<=0) return false; g.globalAlpha=a; g.fillStyle=this.color; g.font=`12px ui-sans-serif`; g.textAlign='center'; g.fillText(this.text, this.x, this.y); g.globalAlpha=1; return a>0; }
+  }
+
+  class Kunai{
+    constructor(x, y, targetX, targetY, team, owner){
+      this.x = x; this.y = y; this.team = team; this.owner = owner;
+      const dx = targetX - x; const dy = targetY - y; const dist = Math.hypot(dx, dy) + 1e-6;
+      const speed = 400;
+      this.vx = (dx / dist) * speed;
+      this.vy = (dy / dist) * speed;
+      this.damage = 15;
+      this.dead = false;
+      this.trail = [];
+      this.maxTrailLength = 6;
+      this.radius = 4;
+      this.piercing = true; // kunai goes through enemies
+      this.hitEnemies = new Set(); // track enemies already hit
+    }
+    
+    update(dt, game){
+      // Save trail
+      this.trail.push({x: this.x, y: this.y});
+      if(this.trail.length > this.maxTrailLength){
+        this.trail.shift();
+      }
+      
+      // Move kunai
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      
+      // Check wall collision
+      if(this.checkWallCollision(game)){
+        this.dead = true;
+        return;
+      }
+      
+      // Hit units (piercing - goes through enemies)
+      this.hitUnits(game);
+      
+      // Remove if out of bounds
+      if(Math.abs(this.x) > 2000 || Math.abs(this.y) > 2000){
+        this.dead = true;
+      }
+    }
+    
+    checkWallCollision(game){
+      for(const wall of game.walls){
+        if(distPointToLineSegment(this.x, this.y, wall.x1, wall.y1, wall.x2, wall.y2) <= this.radius + wall.width){
+          return true;
+        }
+      }
+      return false;
+    }
+    
+    hitUnits(game){
+      for(const unit of game.units){
+        if(unit.dead || unit.team === this.team) continue;
+        if(this.hitEnemies.has(unit)) continue; // already hit this unit
+        
+        const dist = Math.hypot(unit.x - this.x, unit.y - this.y);
+        if(dist <= this.radius + unit.radius){
+          // Damage enemy
+          unit.hit(this.damage, game, this.x, this.y);
+          this.hitEnemies.add(unit);
+          
+          // Visual effect
+          for(let i = 0; i < 5; i++){
+            game.spawnParticle(unit.x, unit.y, rand(-60,60), rand(-60,60), 0.4, '#silver', 2);
+          }
+          
+          // Don't die - kunai keeps going (piercing)
+        }
+      }
+    }
+    
+    draw(g){
+      // Draw trail
+      for(let i = 0; i < this.trail.length; i++){
+        const point = this.trail[i];
+        const alpha = (i / this.trail.length) * 0.6;
+        g.save();
+        g.globalAlpha = alpha;
+        g.fillStyle = 'rgba(192, 192, 192, 0.8)';
+        g.beginPath();
+        g.arc(point.x, point.y, 2, 0, TAU);
+        g.fill();
+        g.restore();
+      }
+      
+      // Draw kunai
+      g.save();
+      g.fillStyle = '#c0c0c0';
+      g.strokeStyle = '#808080';
+      g.lineWidth = 1;
+      
+      // Kunai body
+      g.beginPath();
+      g.arc(this.x, this.y, this.radius, 0, TAU);
+      g.fill();
+      g.stroke();
+      
+      // Kunai direction indicator
+      const angle = Math.atan2(this.vy, this.vx);
+      g.save();
+      g.translate(this.x, this.y);
+      g.rotate(angle);
+      g.beginPath();
+      g.moveTo(this.radius, 0);
+      g.lineTo(this.radius + 6, -2);
+      g.lineTo(this.radius + 6, 2);
+      g.closePath();
+      g.fill();
+      g.restore();
+      
+      g.restore();
+    }
+  }
+
+  class NuclearBase{
+    constructor(x, y, team){
+      this.x = x; this.y = y; this.team = team;
+      this.width = 60; this.height = 60;
+      this.maxHp = 500; this.hp = this.maxHp;
+      this.dead = false;
+      this.flash = 0;
+      this.lockedTarget = null;
+      this.lockTimer = 0;
+      this.lockDuration = 10; // 10 seconds lock
+      this.missileCooldown = 0;
+      this.missileCooldownTime = 10; // 10 seconds between missiles
+      this.lockRange = 1000; // can lock from very far
+    }
+    
+    update(dt, game){
+      if(this.dead) return;
+      
+      this.lockTimer -= dt;
+      this.missileCooldown -= dt;
+      this.flash -= dt;
+      
+      // Find and lock target
+      if(!this.lockedTarget || this.lockedTarget.dead || this.lockTimer <= 0){
+        this.findNewTarget(game);
+      }
+      
+      // Update lock timer
+      if(this.lockedTarget && !this.lockedTarget.dead){
+        this.lockTimer -= dt;
+        if(this.lockTimer <= 0 && this.missileCooldown <= 0){
+          // Time to launch missile!
+          this.launchNuclearMissile(game);
+          this.lockTimer = this.lockDuration; // reset timer
+          this.missileCooldown = this.missileCooldownTime; // reset missile cooldown
+        }
+      }
+      
+      // Clean up if target died
+      if(this.lockedTarget && this.lockedTarget.dead){
+        this.lockedTarget = null;
+        this.lockTimer = 0; // immediately find new target
+      }
+    }
+    
+    findNewTarget(game){
+      // Find closest enemy unit regardless of distance
+      let closest = null;
+      let minDist = Infinity;
+      
+      for(const unit of game.units){
+        if(unit.dead || unit.team === this.team) continue;
+        
+        const dist = Math.hypot(unit.x - this.x, unit.y - this.y);
+        if(dist < minDist){
+          minDist = dist;
+          closest = unit;
+        }
+      }
+      
+      if(closest){
+        this.lockedTarget = closest;
+        this.lockTimer = this.lockDuration;
+        
+        console.log(`NUCLEAR BASE LOCKED TARGET at distance ${minDist.toFixed(0)}`);
+        
+        // Visual effect for locking
+        for(let i = 0; i < 8; i++){
+          game.spawnParticle(this.x, this.y, rand(-80,80), rand(-80,80), 0.8, TEAM[this.team].color, 3);
+        }
+      }
+    }
+    
+    launchNuclearMissile(game){
+      if(!this.lockedTarget || this.dead) return;
+      
+      console.log(`NUCLEAR BASE LAUNCHING MISSILE!`);
+      
+      // Create nuclear missile
+      const missile = {
+        x: this.x, y: this.y - 30,
+        targetX: this.lockedTarget.x,
+        targetY: this.lockedTarget.y,
+        team: this.team,
+        speed: 200,
+        radius: 12, // bigger missile
+        dead: false,
+        trail: [],
+        maxTrailLength: 20, // longer trail
+        explosionRadius: 250, // HUGE explosion (was 150)
+        damage: 300 // Massive damage (was 200)
+      };
+      
+      game.nuclearMissiles.push(missile);
+      
+      // Launch visual effect
+      for(let i = 0; i < 20; i++){
+        game.spawnParticle(this.x, this.y - 30, rand(-100,100), rand(-150,0), 1.0, '#ff0000', 4);
+      }
+      
+      // Screen shake effect
+      this.flash = 0.5;
+    }
+    
+    takeDamage(amount, game){
+      this.hp -= amount;
+      this.flash = 0.2;
+      
+      // Damage visual effect
+      for(let i = 0; i < 10; i++){
+        game.spawnParticle(this.x, this.y, rand(-60,60), rand(-60,60), 0.6, '#ff4444', 3);
+      }
+      
+      if(this.hp <= 0){
+        this.dead = true;
+        // Massive explosion when base is destroyed
+        for(let i = 0; i < 50; i++){
+          const angle = (i / 50) * TAU;
+          const speed = rand(200, 400);
+          game.spawnParticle(this.x, this.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.5, '#ff6600', 5);
+        }
+        
+        // Damage everything near the destroyed base
+        const explosionRadius = 100;
+        const enemies = game.queryNearby(this.x, this.y, explosionRadius);
+        for(const enemy of enemies){
+          if(!enemy.dead){
+            enemy.hit(50, game, this.x, this.y); // damage from base explosion
+          }
+        }
+      }
+    }
+    
+    draw(g){
+      if(this.dead) return;
+      
+      // Draw base building
+      g.save();
+      
+      // Flash effect
+      if(this.flash > 0){
+        g.globalAlpha = this.flash;
+        g.fillStyle = '#ffffff';
+        g.fillRect(this.x - this.width/2 - 5, this.y - this.height/2 - 5, this.width + 10, this.height + 10);
+        g.globalAlpha = 1;
+      }
+      
+      // Base structure
+      g.fillStyle = TEAM[this.team].color;
+      g.fillRect(this.x - this.width/2, this.y - this.height/2, this.width, this.height);
+      
+      // Base details
+      g.fillStyle = 'rgba(0,0,0,0.3)';
+      g.fillRect(this.x - this.width/2 + 5, this.y - this.height/2 + 5, this.width - 10, this.height - 10);
+      
+      // Nuclear symbol
+      g.strokeStyle = '#ffff00';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(this.x, this.y, 15, 0, TAU);
+      g.stroke();
+      
+      // Radiation symbol
+      g.beginPath();
+      for(let i = 0; i < 3; i++){
+        const angle = (i / 3) * TAU * 2;
+        g.moveTo(this.x, this.y);
+        g.lineTo(this.x + Math.cos(angle) * 12, this.y + Math.sin(angle) * 12);
+      }
+      g.stroke();
+      
+      // Lock indicator
+      if(this.lockedTarget && !this.lockedTarget.dead){
+        // Draw lock line
+        g.strokeStyle = '#ff0000';
+        g.lineWidth = 2;
+        g.setLineDash([5, 5]);
+        g.beginPath();
+        g.moveTo(this.x, this.y);
+        g.lineTo(this.lockedTarget.x, this.lockedTarget.y);
+        g.stroke();
+        g.setLineDash([]);
+        
+        // Draw lock indicator on target
+        g.strokeStyle = '#ff0000';
+        g.lineWidth = 3;
+        g.beginPath();
+        g.arc(this.lockedTarget.x, this.lockedTarget.y, this.lockedTarget.radius + 10, 0, TAU);
+        g.stroke();
+      }
+      
+      // Health bar
+      const barWidth = this.width;
+      const barHeight = 6;
+      const barY = this.y - this.height/2 - 15;
+      
+      g.fillStyle = 'rgba(0,0,0,0.5)';
+      g.fillRect(this.x - barWidth/2, barY, barWidth, barHeight);
+      
+      g.fillStyle = '#00ff00';
+      if(this.hp < this.maxHp * 0.3) g.fillStyle = '#ff0000';
+      else if(this.hp < this.maxHp * 0.6) g.fillStyle = '#ffff00';
+      
+      g.fillRect(this.x - barWidth/2, barY, barWidth * (this.hp / this.maxHp), barHeight);
+      
+      // Lock timer display
+      if(this.lockedTarget && this.lockTimer > 0){
+        g.fillStyle = '#ffffff';
+        g.font = '12px ui-sans-serif';
+        g.textAlign = 'center';
+        g.fillText(Math.ceil(this.lockTimer) + 's', this.x, this.y + 5);
+      }
+      
+      g.restore();
+    }
+  }
+
+  class ExplosionWave{
+    constructor(x, y, team){
+      this.x = x; this.y = y; this.team = team;
+      this.radius = 20; // starting radius
+      this.maxRadius = 800; // maximum expansion
+      this.expansionSpeed = 300; // pixels per second
+      this.dead = false;
+      this.thickness = 15; // wave thickness
+    }
+    
+    update(dt, game){
+      // Expand the wave
+      this.radius += this.expansionSpeed * dt;
+      
+      // Check if reached maximum radius
+      if(this.radius >= this.maxRadius){
+        this.dead = true;
+        return;
+      }
+      
+      // Hit all units in the wave path (unstopable through walls)
+      this.hitUnits(game);
+    }
+    
+    hitUnits(game){
+      // Check all units - wave goes through everything
+      const hitRadius = this.thickness;
+      for(const unit of game.units){
+        if(unit.dead || unit.team === this.team) continue;
+        
+        // Calculate distance from unit to wave ring
+        const distToCenter = Math.hypot(unit.x - this.x, unit.y - this.y);
+        const distToWave = Math.abs(distToCenter - this.radius);
+        
+        if(distToWave <= hitRadius + unit.radius){
+          // Instant kill
+          unit.hit(unit.maxHp + 100, game, this.x, this.y);
+          
+          // Visual effect
+          for(let i = 0; i < 20; i++){
+            game.spawnParticle(unit.x, unit.y, rand(-300,300), rand(-300,300), 1.0, '#ff6b6b', 4);
+          }
+        }
+      }
+      
+      // Destroy shield walls too
+      for(const sw of game.shieldWalls){
+        if(sw.dead || sw.team === this.team) continue;
+        const distToCenter = Math.hypot(sw.x - this.x, sw.y - this.y);
+        const distToWave = Math.abs(distToCenter - this.radius);
+        
+        if(distToWave <= this.thickness + sw.r){
+          sw.hp = 0; // destroy
+          sw.dead = true;
+          for(let i = 0; i < 25; i++){
+            game.spawnParticle(sw.x, sw.y, rand(-250,250), rand(-250,250), 0.8, TEAM[sw.team].color, 3);
+          }
+        }
+      }
+      
+      // Destroy nuclear bases too
+      for(const base of game.nuclearBases){
+        if(base.dead || base.team === this.team) continue;
+        const distToCenter = Math.hypot(base.x - this.x, base.y - this.y);
+        const distToWave = Math.abs(distToCenter - this.radius);
+        
+        if(distToWave <= this.thickness + 30){ // 30 is base radius
+          base.takeDamage(200, game); // massive damage
+          
+          // Visual effect
+          for(let i = 0; i < 30; i++){
+            game.spawnParticle(base.x, base.y, rand(-300,300), rand(-300,300), 1.0, '#ff6b6b', 5);
+          }
+        }
+      }
+    }
+    
+    draw(g){
+      // Draw expanding ring
+      g.save();
+      
+      // Outer ring
+      g.globalAlpha = 0.8;
+      g.strokeStyle = 'rgba(255, 100, 100, 0.9)';
+      g.lineWidth = this.thickness;
+      g.shadowColor = 'rgba(255, 100, 100, 1)';
+      g.shadowBlur = 20;
+      g.beginPath();
+      g.arc(this.x, this.y, this.radius, 0, TAU);
+      g.stroke();
+      
+      // Inner glow
+      g.globalAlpha = 0.4;
+      g.strokeStyle = 'rgba(255, 200, 200, 0.8)';
+      g.lineWidth = this.thickness * 0.5;
+      g.shadowBlur = 30;
+      g.beginPath();
+      g.arc(this.x, this.y, this.radius, 0, TAU);
+      g.stroke();
+      
+      // Energy particles along the ring
+      const particleCount = Math.floor(this.radius / 20);
+      for(let i = 0; i < particleCount; i++){
+        const angle = (i / particleCount) * TAU;
+        const px = this.x + Math.cos(angle) * this.radius;
+        const py = this.y + Math.sin(angle) * this.radius;
+        
+        g.globalAlpha = 0.6;
+        g.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        g.shadowColor = 'rgba(255, 255, 255, 1)';
+        g.shadowBlur = 10;
+        g.beginPath();
+        g.arc(px, py, 3, 0, TAU);
+        g.fill();
+      }
+      
+      g.restore();
+    }
+  }
+
+  class SwordSwing{
+    constructor(x, y, angle, team){
+      this.x = x; this.y = y; this.angle = angle; this.team = team;
+      this.length = 300; // panjang tebasan
+      this.width = 40; // lebar area efek
+      this.speed = 600; // kecepatan gerak
+      this.vx = Math.cos(angle) * this.speed;
+      this.vy = Math.sin(angle) * this.speed;
+      this.dead = false;
+      this.trail = []; // untuk efek visual
+      this.maxTrailLength = 8;
+    }
+    
+    update(dt, game){
+      // Simpan posisi sebelumnya untuk trail
+      this.trail.push({x: this.x, y: this.y});
+      if(this.trail.length > this.maxTrailLength){
+        this.trail.shift();
+      }
+      
+      // Gerakkan tebasan
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      
+      // Cek tabrakan dengan tembok/obstacle
+      if(this.checkWallCollision(game)){
+        this.dead = true;
+        return;
+      }
+      
+      // Hancurkan semua unit yang kena
+      this.hitUnits(game);
+      
+      // Cek batas map (opsional, bisa dihilangkan untuk infinite map)
+      if(Math.abs(this.x) > 2000 || Math.abs(this.y) > 2000){
+        this.dead = true;
+      }
+    }
+    
+    checkWallCollision(game){
+      // Cek tabrakan dengan walls
+      for(const wall of game.walls){
+        if(distPointToLineSegment(this.x, this.y, wall.x1, wall.y1, wall.x2, wall.y2) <= this.width/2 + wall.width){
+          return true;
+        }
+      }
+      return false;
+    }
+    
+    hitUnits(game){
+      // Cek semua unit dalam area tebasan
+      const hitRadius = this.width/2;
+      for(const unit of game.units){
+        if(unit.dead || unit.team === this.team) continue;
+        
+        // Hitung jarak dari unit ke garis tebasan
+        const tailX = this.x - this.vx * 0.016; // posisi ekor (frame sebelumnya)
+        const tailY = this.y - this.vy * 0.016;
+        const dist = distPointToLineSegment(unit.x, unit.y, tailX, tailY, this.x, this.y);
+        
+        if(dist <= hitRadius + unit.radius){
+          // Hancurkan unit dalam 1 hit
+          unit.hit(unit.maxHp + 100, game, this.x, this.y); // pastikan mati
+          
+          // Efek visual
+          for(let i = 0; i < 15; i++){
+            game.spawnParticle(unit.x, unit.y, rand(-200,200), rand(-200,200), 0.8, '#ff6b6b', 3);
+          }
+        }
+      }
+      
+      // Hancurkan shield walls juga
+      for(const sw of game.shieldWalls){
+        if(sw.dead || sw.team === this.team) continue;
+        const tailX = this.x - this.vx * 0.016;
+        const tailY = this.y - this.vy * 0.016;
+        const dist = distPointToLineSegment(sw.x, sw.y, tailX, tailY, this.x, this.y);
+        
+        if(dist <= this.width/2 + sw.r){
+          sw.hp = 0; // hancurkan
+          sw.dead = true;
+          for(let i = 0; i < 20; i++){
+            game.spawnParticle(sw.x, sw.y, rand(-150,150), rand(-150,150), 0.6, TEAM[sw.team].color, 2);
+          }
+        }
+      }
+      
+      // Hit nuclear bases too
+      for(const base of game.nuclearBases){ 
+        if(base.dead || base.team === this.team) continue;
+        
+        const tailX = this.x - this.vx * 0.016; // posisi ekor (frame sebelumnya)
+        const tailY = this.y - this.vy * 0.016;
+        const dist = distPointToLineSegment(base.x, base.y, tailX, tailY, this.x, this.y);
+        
+        if(dist <= this.width/2 + 30){ // 30 is base radius
+          base.takeDamage(100, game); // significant damage
+          
+          // Efek visual
+          for(let i = 0; i < 15; i++){
+            game.spawnParticle(base.x, base.y, rand(-200,200), rand(-200,200), 0.8, '#ff6b6b', 3);
+          }
+        }
+      }
+    }
+    
+    draw(g){
+      // Gambar trail efek
+      for(let i = 0; i < this.trail.length; i++){
+        const point = this.trail[i];
+        const alpha = (i / this.trail.length) * 0.6;
+        const size = (i / this.trail.length) * this.width;
+        
+        g.save();
+        g.globalAlpha = alpha;
+        g.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        g.shadowColor = 'rgba(255, 255, 255, 0.9)';
+        g.shadowBlur = 20;
+        g.beginPath();
+        g.arc(point.x, point.y, size/2, 0, TAU);
+        g.fill();
+        g.restore();
+      }
+      
+      // Gambar efek utama
+      g.save();
+      g.globalAlpha = 0.9;
+      
+      // Efek cahaya pusat
+      const gradient = g.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.width);
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.8)');
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0.2)');
+      
+      g.fillStyle = gradient;
+      g.shadowColor = 'rgba(255, 255, 255, 1)';
+      g.shadowBlur = 30;
+      g.beginPath();
+      g.arc(this.x, this.y, this.width/2, 0, TAU);
+      g.fill();
+      
+      // Efek core
+      g.strokeStyle = 'rgba(255, 255, 255, 1)';
+      g.lineWidth = 3;
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(this.x - this.vx * 0.05, this.y - this.vy * 0.05);
+      g.lineTo(this.x + this.vx * 0.05, this.y + this.vy * 0.05);
+      g.stroke();
+      
+      g.restore();
+    }
   }
 
   class Projectile{
@@ -423,7 +1105,54 @@
 
       // collision via spatial grid
       const enemies = game.queryNearby(this.x,this.y, 48);
-      for(const u of enemies){ if(u.team===this.team || u.dead) continue; const r=u.radius+this.radius; if(dist2(this.x,this.y,u.x,u.y) <= r*r){ if(this.onExplode){ this.onExplode(game,this.x,this.y,this); } else { u.hit(this.dmg, game, this.x,this.y); } this.dead=true; break; } }
+      for(const u of enemies){ if(u.team===this.team || u.dead) continue; const r=u.radius+this.radius; if(dist2(this.x,this.y,u.x,u.y) <= r*r){ if(this.onExplode){ this.onExplode(game,this.x,this.y,this); } else { u.hit(this.dmg, game, this.x, this.y); } this.dead=true; break; } }
+      
+      // Check structure collisions
+      if(!this.dead){
+        // Shield walls
+        for(const sw of game.shieldWalls){ 
+          if(sw.dead || sw.team===this.team) continue; 
+          const r=sw.r+this.radius; 
+          if(dist2(this.x,this.y,sw.x,sw.y) <= r*r){ 
+            sw.hp-=this.dmg; 
+            sw.flash=0.1; 
+            game.texts.push(new FloatingText(sw.x,sw.y-12*dpr,'-'+Math.round(this.dmg),TEAM[sw.team].color)); 
+            for(let i=0;i<4;i++) game.spawnParticle(sw.x,sw.y,rand(-60,60),rand(-60,30),0.4,TEAM[sw.team].blood,2*dpr); 
+            if(sw.hp<=0){ 
+              sw.dead=true; 
+              for(let i=0;i<30;i++) game.spawnParticle(sw.x,sw.y,rand(-180,180),rand(-180,180),0.8,TEAM[sw.team].blood,3*dpr); 
+              game.pathCache.clear(); 
+            } 
+            if(this.onExplode){ this.onExplode(game,this.x,this.y,this); } 
+            this.dead=true; 
+            break; 
+          } 
+        }
+        
+        // Turrets
+        for(const turret of game.turrets){ 
+          if(turret.dead || turret.team===this.team) continue; 
+          const r=turret.radius+this.radius; 
+          if(dist2(this.x,this.y,turret.x,turret.y) <= r*r){ 
+            turret.hit(this.dmg, game, this.x, this.y); 
+            if(this.onExplode){ this.onExplode(game,this.x,this.y,this); } 
+            this.dead=true; 
+            break; 
+          } 
+        }
+        
+        // Nuclear bases
+        for(const base of game.nuclearBases){ 
+          if(base.dead || base.team===this.team) continue; 
+          const r=30+this.radius; 
+          if(dist2(this.x,this.y,base.x,base.y) <= r*r){ 
+            base.takeDamage(this.dmg, game); 
+            if(this.onExplode){ this.onExplode(game,this.x,this.y,this); } 
+            this.dead=true; 
+            break; 
+          } 
+        }
+      }
     }
     draw(g){
       // trail lines
@@ -466,12 +1195,64 @@
       g.beginPath(); g.rect(-r*0.7, r*0.2, r*1.4, r*0.5); g.fill(); g.stroke(); g.beginPath(); g.moveTo(-r*0.2, r*0.2); g.lineTo(r*0.9, -r*0.6); g.lineWidth=3*dpr; g.stroke();
     } else if(type==='berserker'){
       g.beginPath(); g.moveTo(-r*0.8,-r*0.2); g.lineTo(-r*0.1,0); g.lineTo(-r*0.8,r*0.2); g.closePath(); g.fill(); g.beginPath(); g.moveTo(r*0.8,-r*0.2); g.lineTo(r*0.1,0); g.lineTo(r*0.8,r*0.2); g.closePath(); g.fill(); g.stroke();
+    } else if(type==='lord'){
+      // Crown icon for Lord
+      g.beginPath(); g.moveTo(-r*0.8, -r*0.2); g.lineTo(-r*0.6, -r*0.8); g.lineTo(-r*0.3, -r*0.4); g.lineTo(0, -r*0.8); g.lineTo(r*0.3, -r*0.4); g.lineTo(r*0.6, -r*0.8); g.lineTo(r*0.8, -r*0.2); g.closePath(); g.fill(); g.stroke();
+      // Sword in center
+      g.beginPath(); g.moveTo(0, -r*0.1); g.lineTo(0, r*0.6); g.lineWidth=3; g.stroke(); g.beginPath(); g.moveTo(-r*0.2, r*0.4); g.lineTo(r*0.2, r*0.4); g.stroke();
     } else if(type==='summoner'){
       g.beginPath(); g.arc(0,0,r*0.8,0,TAU); g.fill(); g.stroke(); g.beginPath(); g.moveTo(-r*0.3,0); g.lineTo(0,-r*0.6); g.lineTo(r*0.3,0); g.stroke();
     } else if(type==='frost'){
       g.beginPath(); for(let i=0;i<6;i++){ const a=i*TAU/6; g.moveTo(0,0); g.lineTo(Math.cos(a)*r*0.9, Math.sin(a)*r*0.9);} g.stroke();
     } else if(type==='engineer' || type==='turret'){
       g.beginPath(); g.rect(-r*0.8,-r*0.5,r*1.6,r*1.0); g.fill(); g.stroke(); g.beginPath(); g.rect(-r*0.2,-r*1.0,r*0.4,r*0.5); g.fill();
+    } else if(type==='cavalry'){
+      // Horse icon for cavalry
+      g.beginPath(); g.ellipse(0,0,r*0.8,r*0.6,0,0,TAU); g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(r*0.6,0); g.lineTo(r*1.2,-r*0.2); g.lineTo(r*1.1,r*0.3); g.closePath(); g.fill(); g.stroke();
+      // Rider
+      g.beginPath(); g.arc(-r*0.2,-r*0.3,r*0.25,0,TAU); g.fill(); g.stroke();
+    } else if(type==='builder'){
+      // Hammer icon for builder
+      g.beginPath(); g.rect(-r*0.1,-r*0.8,r*0.2,r*1.2); g.fill(); g.stroke();
+      g.beginPath(); g.rect(-r*0.6,-r*0.9,r*1.2,r*0.2); g.fill(); g.stroke();
+    } else if(type==='monster'){
+      // Monster claw icon
+      g.beginPath(); g.arc(0,0,r*0.7,0,TAU); g.fill(); g.stroke();
+      // Claws
+      for(let i = 0; i < 3; i++){
+        const angle = (i - 1) * 0.3;
+        g.beginPath(); g.moveTo(Math.cos(angle)*r*0.7, Math.sin(angle)*r*0.7);
+        g.lineTo(Math.cos(angle)*r*1.1, Math.sin(angle)*r*1.1);
+        g.stroke();
+      }
+    } else if(type==='monsterking'){
+      // Crown monster icon
+      g.beginPath(); g.arc(0,0,r*0.8,0,TAU); g.fill(); g.stroke();
+      // Crown
+      g.beginPath(); g.moveTo(-r*0.6,-r*0.6); g.lineTo(-r*0.3,-r*0.9); g.lineTo(0,-r*0.7); g.lineTo(r*0.3,-r*0.9); g.lineTo(r*0.6,-r*0.6); g.closePath(); g.fill(); g.stroke();
+      // Spikes
+      for(let i = 0; i < 4; i++){
+        const angle = i * TAU/4;
+        g.beginPath(); g.moveTo(Math.cos(angle)*r*0.8, Math.sin(angle)*r*0.8);
+        g.lineTo(Math.cos(angle)*r*1.2, Math.sin(angle)*r*1.2);
+        g.stroke();
+      }
+    } else if(type==='loid'){
+      // Loid icon - ninja with kunai
+      g.beginPath(); g.rect(-r*0.6,-r*0.6,r*1.2,r*1.2); g.fill(); g.stroke();
+      // Kunai in hand
+      g.beginPath(); g.moveTo(r*0.3, -r*0.1); g.lineTo(r*0.8, -r*0.3); g.lineTo(r*0.8, r*0.1); g.closePath(); g.fill(); g.stroke();
+      // Eye
+      g.beginPath(); g.arc(-r*0.2, -r*0.1, r*0.1, 0, TAU); g.fill();
+    } else if(type==='lance'){
+      // Lance icon - warrior with lance
+      g.beginPath(); g.arc(0,0,r*0.8,0,TAU); g.fill(); g.stroke();
+      // Lance
+      g.beginPath(); g.moveTo(-r*0.1, 0); g.lineTo(r*1.2, 0); g.stroke();
+      g.beginPath(); g.moveTo(r*1.1, -r*0.2); g.lineTo(r*1.2, 0); g.lineTo(r*1.1, r*0.2); g.closePath(); g.fill();
+      // Blink effect
+      g.strokeStyle = 'rgba(255,255,0,0.6)'; g.lineWidth = 2; g.beginPath(); g.arc(0,0,r*1.3,0,TAU); g.stroke();
     } else if(type==='minion'){
       g.beginPath(); g.arc(0,0,r*0.7,0,TAU); g.fill(); g.stroke();
     } else {
@@ -505,7 +1286,7 @@
       } else if(type==='saber'){
         this.maxHp=65; this.hp=this.maxHp; this.damage=10; this.range=34*scale; this.speed=120*scale; this.coolMax=0.6; this.radius=10*scale;
       } else if(type==='ninja'){
-        this.maxHp=45; this.hp=this.maxHp; this.damage=22; this.range=26*scale; this.speed=150*scale; this.coolMax=1.2; this.radius=9*scale; this.vanish=0;
+        this.maxHp=55; this.hp=this.maxHp; this.damage=20; this.range=22*scale; this.speed=150*scale; this.coolMax=1.2; this.radius=9*scale; this.vanish=0; this.blinkCooldown=0; this.lastBlinkPos=null;
       } else if(type==='shield'){
         this.maxHp=120; this.hp=this.maxHp; this.damage=8; this.range=24*scale; this.speed=70*scale; this.coolMax=1.1; this.radius=12*scale; this.aura=90*scale; this.shieldPulse=0;
       } else if(type==='artillery'){
@@ -520,6 +1301,20 @@
         this.maxHp=75; this.hp=this.maxHp; this.damage=8; this.range=0; this.speed=80*scale; this.coolMax=3.0; this.radius=10*scale; this.hasTurret=false;
       } else if(type==='turret'){
         this.maxHp=80; this.hp=this.maxHp; this.damage=14; this.range=240*scale; this.speed=0; this.coolMax=0.5; this.radius=12*scale; this.immuneKnock=true;
+      } else if(type==='lord'){
+        this.maxHp=500; this.hp=this.maxHp; this.damage=999; this.range=0; this.speed=60*scale; this.coolMax=3.0; this.radius=14*scale; this.immuneKnock=true; this.swingCooldown=0; this.explosionCooldown=0; this.blinkCooldown=0; this.lastBlinkPos=null;
+      } else if(type==='cavalry'){
+        this.maxHp=90; this.hp=this.maxHp; this.damage=18; this.range=30*scale; this.speed=200*scale; this.coolMax=0.6; this.radius=12*scale; this.chargeForce=300; this.isCharging=false;
+      } else if(type==='builder'){
+        this.maxHp=40; this.hp=this.maxHp; this.damage=0; this.range=0; this.speed=60*scale; this.coolMax=999; this.radius=10*scale; this.buildTime=15; this.buildCooldown=0; this.repairCooldown=0;
+      } else if(type==='monster'){
+        this.maxHp=120; this.hp=this.maxHp; this.damage=25; this.range=28*scale; this.speed=90*scale; this.coolMax=0.8; this.radius=13*scale; this.intimidating=true;
+      } else if(type==='monsterking'){
+        this.maxHp=300; this.hp=this.maxHp; this.damage=35; this.range=35*scale; this.speed=70*scale; this.coolMax=1.0; this.radius=16*scale; this.spawnCooldown=0; this.intimidating=true;
+      } else if(type==='loid'){
+        this.maxHp=65; this.hp=this.maxHp; this.damage=15; this.range=150*scale; this.speed=110*scale; this.coolMax=3.0; this.radius=10*scale; this.kunaiCooldown=0; this.kunais=[]; this.teleportCooldown=0; this.throwPhase='ready'; this.throwTimer=0;
+      } else if(type==='lance'){
+        this.maxHp=80; this.hp=this.maxHp; this.damage=12; this.range=180*scale; this.speed=140*scale; this.coolMax=0.8; this.radius=9*scale; this.blinkCooldown=0; this.trails=[]; this.blinkDuration=0.3; this.maxTrailLength=8;
       } else if(type==='minion'){
         this.maxHp=30; this.hp=this.maxHp; this.damage=8; this.range=22*scale; this.speed=120*scale; this.coolMax=0.9; this.radius=8*scale;
       } else {
@@ -532,9 +1327,55 @@
       if(this.retarget>0 && this.target && !this.target.dead) return;
       this.retarget = 0.35 + Math.random()*0.25;
       let best=null, bd=1e12;
-      // Prioritas: cari shieldwall musuh dulu, baru unit
-      for(const sw of game.shieldWalls){ if(sw.team===this.team||sw.dead) continue; const d=dist2(this.x,this.y,sw.x,sw.y); if(d<bd && d<this.range*this.range*4){ bd=d; best=sw; } }
-      if(!best){ for(const u of game.units){ if(u.team===this.team||u.dead) continue; const d=dist2(this.x,this.y,u.x,u.y); if(d<bd){ bd=d; best=u; } } }
+      
+      // Check ALL targets with proper priority
+      // 1. Nuclear bases (highest priority) - ABSOLUTE DETECTION RANGE
+      const baseDetectionRange = 500 * 500; // 500px absolute detection range
+      for(const base of game.nuclearBases){ 
+        if(base.team===this.team||base.dead) continue; 
+        const d=dist2(this.x,this.y,base.x,base.y); 
+        if(d <= baseDetectionRange){ // ABSOLUTE range, not dependent on unit range
+          best=base; 
+          console.log(`UNIT ${this.type} TARGETING NUCLEAR BASE! Distance: ${Math.sqrt(d)}`);
+          break; // Stop searching - found nuclear base
+        } 
+      }
+      
+      // 2. Shield walls (high priority)
+      if(!best){
+        for(const sw of game.shieldWalls){ 
+          if(sw.team===this.team||sw.dead) continue; 
+          const d=dist2(this.x,this.y,sw.x,sw.y); 
+          if(d<bd && d<=this.range*this.range*8){ // Large detection range for structures
+            bd=d; best=sw; 
+            console.log(`UNIT ${this.type} TARGETING SHIELD WALL! Distance: ${Math.sqrt(d)}`);
+          } 
+        }
+      }
+      
+      // 3. Turrets (high priority)
+      if(!best){
+        for(const turret of game.turrets){ 
+          if(turret.team===this.team||turret.dead) continue; 
+          const d=dist2(this.x,this.y,turret.x,turret.y); 
+          if(d<bd && d<=this.range*this.range*8){ // Large detection range for structures
+            bd=d; best=turret; 
+            console.log(`UNIT ${this.type} TARGETING TURRET! Distance: ${Math.sqrt(d)}`);
+          } 
+        }
+      }
+      
+      // 4. Units (normal priority)
+      if(!best){
+        for(const u of game.units){ 
+          if(u.team===this.team||u.dead) continue; 
+          const d=dist2(this.x,this.y,u.x,u.y); 
+          if(d<bd && d<=this.range*this.range*4){ 
+            bd=d; best=u; 
+          } 
+        }
+      }
+      
       this.target = best;
     }
     hit(dmg, game, ox,oy){
@@ -549,7 +1390,167 @@
     }
     think(game, dt){
       this.age+=dt; this.cool-=dt; if(this.dead) return;
+      
+      // Lord behavior: swing sword every 3 seconds in random direction
+      if(this.type==='lord'){
+        this.swingCooldown -= dt;
+        this.explosionCooldown -= dt;
+        
+        // Check for explosion ability when HP is low (<30%)
+        if(this.hp/this.maxHp < 0.3 && this.explosionCooldown <= 0){
+          this.releaseExplosion(game);
+          this.explosionCooldown = 8.0; // cooldown for explosion
+        }
+        
+        // Swing sword
+        if(this.swingCooldown <= 0){
+          this.swingSword(game);
+          this.swingCooldown = 3.0; // swing every 3 seconds
+        }
+        
+        // Blink ability during sword cooldown
+        if(this.swingCooldown > 1.0){ // blink available when sword is cooling down
+          this.tryBlink(game);
+        }
+        
+        // Lord doesn't move or target normally, just uses abilities
+        this.state='idle';
+        return;
+      }
+      
+      // Ninja behavior: blink ability for escape and positioning
+      if(this.type==='ninja'){
+        this.blinkCooldown -= dt;
+        
+        // Try to blink when in danger or for better positioning
+        if(this.blinkCooldown <= 0){
+          this.tryNinjaBlink(game);
+        }
+        
+        // Continue with normal targeting
+        if(!this.target || this.target.dead){ this.findTarget(game); if(!this.target){ this.state='idle'; return; } }
+      }
+      
+      // Cavalry behavior: charges through enemies
+      if(this.type==='cavalry'){
+        this.buildCooldown -= dt;
+        if(!this.target || this.target.dead){ this.findTarget(game); if(!this.target){ this.state='idle'; return; } }
+        const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy);
+        
+        if(d <= this.range){
+          this.state='attack'; 
+          this.isCharging = true;
+          if(this.cool<=0){ 
+            this.chargeAttack(game); 
+            this.cool=this.coolMax; 
+          }
+        } else { 
+          this.state='move'; 
+          this.isCharging = false;
+          const dirx=dx/(d+1e-6), diry=dy/(d+1e-6);
+          this.vx += dirx*this.speed*0.02; this.vy += diry*this.speed*0.02;
+        }
+        return;
+      }
+      
+      // Builder behavior: builds castles and repairs walls
+      if(this.type==='builder'){
+        this.buildCooldown -= dt;
+        this.repairCooldown -= dt;
+        
+        // First try to repair nearby damaged walls
+        if(this.repairCooldown <= 0){
+          this.repairNearbyWalls(game);
+        }
+        
+        // Build castle if no walls to repair
+        if(this.buildCooldown <= 0){
+          this.buildLargeCastle(game);
+          this.buildCooldown = 999; // very long cooldown, essentially one-time use
+        }
+        
+        // Builder doesn't attack or move much
+        this.state='idle';
+        return;
+      }
+      
+      // Monster King behavior: spawns monsters
+      if(this.type==='monsterking'){
+        this.spawnCooldown -= dt;
+        if(this.spawnCooldown <= 0){
+          this.spawnMonsters(game);
+          this.spawnCooldown = 5.0; // spawn every 5 seconds
+        }
+        // Continue with normal targeting
+        if(!this.target || this.target.dead){ this.findTarget(game); if(!this.target){ this.state='idle'; return; } }
+      }
+      
+      // Loid behavior: throws kunai and teleports
+      if(this.type==='loid'){
+        this.kunaiCooldown -= dt;
+        this.teleportCooldown -= dt;
+        this.throwTimer -= dt;
+        
+        if(!this.target || this.target.dead){ this.findTarget(game); if(!this.target){ this.state='idle'; return; } }
+        
+        const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy);
+        
+        if(d <= this.range){
+          this.state='attack'; 
+          this.vx*=0.9; this.vy*=0.9;
+          
+          // Phase-based kunai throwing
+          if(this.throwPhase === 'ready' && this.kunaiCooldown <= 0){
+            this.throwKunaiSpread(game);
+            this.throwPhase = 'thrown';
+            this.throwTimer = 1.5; // wait 1.5 seconds after throwing
+            this.kunaiCooldown = 3.0;
+          }
+          
+          // Teleport only after kunai have traveled
+          if(this.throwPhase === 'thrown' && this.throwTimer <= 0 && this.teleportCooldown <= 0 && this.kunais.length > 0){
+            this.teleportToKunai(game);
+            this.throwPhase = 'ready'; // reset for next cycle
+            this.teleportCooldown = 1.0;
+          }
+        } else { 
+          this.state='move'; 
+          const dirx=dx/(d+1e-6), diry=dy/(d+1e-6);
+          this.vx += dirx*this.speed*0.02; this.vy += diry*this.speed*0.02;
+        }
+        return;
+      }
+      
+      // Lance behavior: blinks and leaves yellow trail that damages
+      if(this.type==='lance'){
+        this.blinkCooldown -= dt;
+        
+        // Update trails
+        this.updateTrails(dt);
+        
+        if(!this.target || this.target.dead){ this.findTarget(game); if(!this.target){ this.state='idle'; return; } }
+        
+        const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy);
+        
+        if(d <= this.range){
+          this.state='attack'; 
+          this.vx*=0.9; this.vy*=0.9;
+          
+          // Blink and create trail
+          if(this.blinkCooldown <= 0){
+            this.blinkAttack(game);
+            this.blinkCooldown = 0.8; // blink every 0.8 seconds
+          }
+        } else { 
+          this.state='move'; 
+          const dirx=dx/(d+1e-6), diry=dy/(d+1e-6);
+          this.vx += dirx*this.speed*0.02; this.vy += diry*this.speed*0.02;
+        }
+        return;
+      }
+      
       if(!this.target || this.target.dead){ this.findTarget(game); if(!this.target){ this.state='idle'; return; } }
+      
       const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy);
       
       // Turret: selalu attack jika ada target dalam range
@@ -602,6 +1603,47 @@
       // Turret: stays put (speed 0)
       if(this.type==='turret'){ this.vx=this.vy=0; }
     }
+    
+    damageNearbyStructures(game, x, y, range, damage){
+      console.log(`DAMAGING STRUCTURES: range=${range}, damage=${damage}`);
+      
+      // Damage shield walls
+      for(const sw of game.shieldWalls){ 
+        if(sw.dead || sw.team===this.team) continue; 
+        const d=dist2(x,y,sw.x,sw.y); 
+        if(d <= (range+sw.r)*(range+sw.r)){ 
+          console.log(`HIT SHIELD WALL: hp=${sw.hp}/${sw.maxHp}`);
+          sw.hp-=damage; 
+          sw.flash=0.1; 
+          game.texts.push(new FloatingText(sw.x,sw.y-12*dpr,'-'+Math.round(damage),TEAM[sw.team].color)); 
+          for(let i=0;i<4;i++) game.spawnParticle(sw.x,sw.y,rand(-60,60),rand(-60,30),0.4,TEAM[sw.team].blood,2*dpr); 
+          if(sw.hp<=0){ 
+            sw.dead=true; 
+            for(let i=0;i<30;i++) game.spawnParticle(sw.x,sw.y,rand(-180,180),rand(-180,180),0.8,TEAM[sw.team].blood,3*dpr); 
+            game.pathCache.clear(); 
+          } 
+        } 
+      }
+      
+      // Damage turrets
+      for(const turret of game.turrets){ 
+        if(turret.dead || turret.team===this.team) continue; 
+        const d=dist2(x,y,turret.x,turret.y); 
+        if(d <= (range+turret.radius)*(range+turret.radius)){ 
+          turret.hit(damage, game, x, y); 
+        } 
+      }
+      
+      // Damage nuclear bases
+      for(const base of game.nuclearBases){ 
+        if(base.dead || base.team===this.team) continue; 
+        const d=dist2(x,y,base.x,base.y); 
+        if(d <= (range+30)*(range+30)){ 
+          base.takeDamage(damage, game); 
+        } 
+      }
+    }
+    
     attack(game){
       if(this.type==='mauler' || this.type==='anker' || this.type==='spearman' || this.type==='rogue' || this.type==='saber' || this.type==='shield'){
         // melee arc hit: check small radius around front
@@ -612,12 +1654,15 @@
         const enemies = game.queryNearby(this.x,this.y, r+8);
         for(const u of enemies){ if(u.team===this.team||u.dead) continue; if(dist2(this.x,this.y,u.x,u.y) <= (r+u.radius)*(r+u.radius)){ u.hit(this.damage, game); }
         }
-        // Hit shieldWalls juga
-        for(const sw of game.shieldWalls){ if(sw.dead || sw.team===this.team) continue; if(dist2(this.x,this.y,sw.x,sw.y) <= (r+sw.r)*(r+sw.r)){ sw.hp-=this.damage; sw.flash=0.1; game.texts.push(new FloatingText(sw.x,sw.y-12*dpr,'-'+Math.round(this.damage),TEAM[sw.team].color)); for(let i=0;i<4;i++) game.spawnParticle(sw.x,sw.y,rand(-60,60),rand(-60,30),0.4,TEAM[sw.team].blood,2*dpr); if(sw.hp<=0){ sw.dead=true; for(let i=0;i<30;i++) game.spawnParticle(sw.x,sw.y,rand(-180,180),rand(-180,180),0.8,TEAM[sw.team].blood,3*dpr); game.pathCache.clear(); } } }
+        // Damage nearby structures
+        this.damageNearbyStructures(game, this.x, this.y, r, this.damage);
         if(this.type==='shield'){
-          // small frontal barrier (short-lived wall obstacle)
-          const ang = Math.atan2(this.vy, this.vx); const bx=this.x+Math.cos(ang)* (this.radius+12), by=this.y+Math.sin(ang)*(this.radius+12);
-          game.addObstacle('wall', bx, by, 14, 2.0); // lifespan via alpha handled in draw with fade
+          // small frontal barrier (short-lived wall obstacle) - LIMITED FREQUENCY
+          if(!this.lastShieldTime || game.last - this.lastShieldTime > 1000){ // Max 1 per second
+            const ang = Math.atan2(this.vy, this.vx); const bx=this.x+Math.cos(ang)* (this.radius+12), by=this.y+Math.sin(ang)*(this.radius+12);
+            game.addObstacle('wall', bx, by, 14, 2.0); // lifespan via alpha handled in draw with fade
+            this.lastShieldTime = game.last;
+          }
         }
       } else if(this.type==='sniper'){
         // fast straight projectile
@@ -684,6 +1729,552 @@
         // Turret hanya menembak, tidak bergerak
         if(!this.target) return; const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy)+1e-6; const sp=380; const vx=dx/d*sp, vy=dy/d*sp;
         const pr=new Projectile(this.x, this.y, vx, vy, this.team, this.damage, null, sp); pr.color='rgb(255,200,80)'; pr.radius=3; game.projectiles.push(pr);
+      } else if(this.type==='monster' || this.type==='monsterking'){
+        // Monster melee attack with intimidating effect
+        if(!this.target) return;
+        const dx=this.target.x-this.x, dy=this.target.y-this.y; const d=Math.hypot(dx,dy)+1e-6;
+        
+        // Check if in range
+        if(d <= this.range){
+          // Damage target
+          this.target.hit(this.damage, game, this.x, this.y);
+          
+          // Damage nearby structures
+          this.damageNearbyStructures(game, this.x, this.y, this.range, this.damage);
+          
+          // Intimidating effect - damage nearby enemies too
+          const aoeRange = this.radius + 25;
+          const enemies = game.queryNearby(this.x, this.y, aoeRange);
+          for(const enemy of enemies){
+            if(enemy.team === this.team || enemy.dead || enemy === this.target) continue;
+            const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+            if(dist <= aoeRange){
+              enemy.hit(this.damage * 0.5, game, this.x, this.y); // 50% damage to nearby
+            }
+          }
+          
+          // Visual effects
+          for(let i = 0; i < 10; i++){
+            game.spawnParticle(this.x, this.y, rand(-120,120), rand(-120,120), 0.6, '#ff0000', 3);
+          }
+          
+          // Screen shake for monster king
+          if(this.type === 'monsterking'){
+            this.flash = 0.2;
+            for(let i = 0; i < 15; i++){
+              game.spawnParticle(this.x, this.y, rand(-150,150), rand(-150,150), 0.8, '#8b0000', 4);
+            }
+          }
+        }
+      } else if(this.type==='lance'){
+        // Lance doesn't use traditional attack - uses blinkAttack method
+        return;
+      }
+    }
+    swingSword(game){
+      // Lord swings sword in random direction
+      const angle = rand(0, TAU);
+      const swing = new SwordSwing(this.x, this.y, angle, this.team);
+      game.swordSwings.push(swing);
+      
+      // Visual effect for swing start
+      for(let i = 0; i < 8; i++){
+        game.spawnParticle(this.x, this.y, Math.cos(angle + rand(-0.5, 0.5)) * 100, Math.sin(angle + rand(-0.5, 0.5)) * 100, 0.4, '#ffffff', 2);
+      }
+    }
+    releaseExplosion(game){
+      // Lord releases unstoppable explosion wave
+      const wave = new ExplosionWave(this.x, this.y, this.team);
+      game.explosionWaves.push(wave);
+      
+      // Visual effect for explosion start
+      for(let i = 0; i < 30; i++){
+        const angle = (i / 30) * TAU;
+        const speed = rand(200, 400);
+        game.spawnParticle(this.x, this.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.2, '#ff6b6b', 4);
+      }
+      
+      // Screen shake effect (visual feedback)
+      this.flash = 0.3;
+    }
+    tryBlink(game){
+      this.blinkCooldown -= game.dt;
+      if(this.blinkCooldown > 0) return;
+      
+      // Calculate blink distance based on HP level (lower HP = longer blink)
+      const hpRatio = this.hp / this.maxHp;
+      const maxBlinkDistance = 200; // max distance when HP is very low
+      const minBlinkDistance = 50;  // min distance when HP is high
+      const blinkDistance = maxBlinkDistance - (hpRatio * (maxBlinkDistance - minBlinkDistance));
+      
+      // Find nearest enemy for blink direction
+      let nearestEnemy = null;
+      let minDist = Infinity;
+      
+      for(const unit of game.units){
+        if(unit.dead || unit.team === this.team) continue;
+        const dist = Math.hypot(unit.x - this.x, unit.y - this.y);
+        if(dist < minDist){
+          minDist = dist;
+          nearestEnemy = unit;
+        }
+      }
+      
+      if(nearestEnemy && minDist < blinkDistance * 2){
+        // Blink towards nearest enemy
+        const dx = nearestEnemy.x - this.x;
+        const dy = nearestEnemy.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        const blinkX = this.x + (dx / dist) * blinkDistance;
+        const blinkY = this.y + (dy / dist) * blinkDistance;
+        
+        // Store old position for trail effect
+        const oldX = this.x;
+        const oldY = this.y;
+        
+        // Perform blink
+        this.x = blinkX;
+        this.y = blinkY;
+        
+        // Visual effect - ninja-like trail
+        for(let i = 0; i < 8; i++){
+          const alpha = 1 - (i / 8);
+          const trailX = oldX + (blinkX - oldX) * (i / 8);
+          const trailY = oldY + (blinkY - oldY) * (i / 8);
+          game.spawnParticle(trailX, trailY, rand(-50,50), rand(-50,50), 0.3, 'rgba(255,255,255,0.8)', 2);
+        }
+        
+        // Blink cooldown (very short, almost spammable)
+        this.blinkCooldown = 0.1;
+      }
+    }
+    tryNinjaBlink(game){
+      // Ninja blink - shorter cooldown than Lord, tactical positioning
+      if(this.blinkCooldown > 0) return;
+      
+      const blinkDistance = 80; // fixed distance for ninja (shorter than Lord)
+      
+      // Find nearest enemy or escape direction
+      let nearestEnemy = null;
+      let minDist = Infinity;
+      
+      for(const unit of game.units){
+        if(unit.dead || unit.team === this.team) continue;
+        const dist = Math.hypot(unit.x - this.x, unit.y - this.y);
+        if(dist < minDist){
+          minDist = dist;
+          nearestEnemy = unit;
+        }
+      }
+      
+      if(nearestEnemy){
+        // Blink behind enemy for tactical advantage
+        const dx = nearestEnemy.x - this.x;
+        const dy = nearestEnemy.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        
+        // Calculate blink position (behind enemy)
+        const blinkX = nearestEnemy.x - (dx / dist) * (nearestEnemy.radius + 20);
+        const blinkY = nearestEnemy.y - (dy / dist) * (nearestEnemy.radius + 20);
+        
+        // Store old position for trail effect
+        const oldX = this.x;
+        const oldY = this.y;
+        
+        // Perform ninja blink
+        this.x = blinkX;
+        this.y = blinkY;
+        
+        // Ninja-specific visual effects
+        for(let i = 0; i < 12; i++){
+          const alpha = 1 - (i / 12);
+          const trailX = oldX + (blinkX - oldX) * (i / 12);
+          const trailY = oldY + (blinkY - oldY) * (i / 12);
+          game.spawnParticle(trailX, trailY, rand(-30,30), rand(-30,30), 0.4, 'rgba(150,150,150,0.9)', 2);
+        }
+        
+        // Smoke effect at destination
+        for(let i = 0; i < 8; i++){
+          game.spawnParticle(this.x, this.y, rand(-40,40), rand(-40,40), 0.6, 'rgba(100,100,100,0.7)', 3);
+        }
+        
+        // Shorter cooldown for ninja (more frequent than Lord)
+        this.blinkCooldown = 0.8;
+      }
+    }
+    repairNearbyWalls(game){
+      // Find and repair nearby damaged shield walls
+      const repairRange = 100;
+      let repaired = false;
+      
+      for(const wall of game.shieldWalls){
+        if(wall.dead || wall.team !== this.team) continue;
+        
+        const dist = Math.hypot(wall.x - this.x, wall.y - this.y);
+        if(dist <= repairRange && wall.hp < wall.maxHp){
+          // Repair the wall (5 seconds = 5 HP per second for 25 HP total)
+          const repairAmount = Math.min(25, wall.maxHp - wall.hp);
+          wall.hp += repairAmount;
+          wall.flash = 0.2;
+          
+          // Visual effect for repair
+          for(let i = 0; i < 8; i++){
+            game.spawnParticle(wall.x, wall.y, rand(-40,40), rand(-40,40), 0.6, TEAM[this.team].color, 2);
+          }
+          
+          game.texts.push(new FloatingText(wall.x, wall.y - 15, '+' + Math.round(repairAmount), TEAM[this.team].color));
+          
+          repaired = true;
+          this.repairCooldown = 5.0; // 5 seconds per repair
+          break;
+        }
+      }
+      
+      return repaired;
+    }
+    buildLargeCastle(game){
+      // Builder creates MASSIVE castle with 100 shield walls!
+      const castleSize = 300; // HUGE castle area
+      const wallSpacing = 30; // Dense wall placement
+      
+      // Calculate castle boundaries
+      const left = this.x - castleSize/2;
+      const right = this.x + castleSize/2;
+      const top = this.y - castleSize/2;
+      const bottom = this.y + castleSize/2;
+      
+      // Build massive castle with 100 shield walls in grid pattern
+      const wallPositions = [];
+      const wallsPerSide = 25; // 25 walls per side = 100 total
+      
+      // Top wall (25 walls)
+      for(let i = 0; i < wallsPerSide; i++){
+        const x = left + (castleSize / (wallsPerSide - 1)) * i;
+        wallPositions.push({x: x, y: top});
+      }
+      
+      // Bottom wall (25 walls, with gate gaps)
+      for(let i = 0; i < wallsPerSide; i++){
+        const x = left + (castleSize / (wallsPerSide - 1)) * i;
+        // Leave gaps for gates at center
+        if(Math.abs(x - this.x) > 40){ // Gate width 80px
+          wallPositions.push({x: x, y: bottom});
+        }
+      }
+      
+      // Left wall (25 walls)
+      for(let i = 1; i < wallsPerSide - 1; i++){ // Skip corners to avoid overlap
+        const y = top + (castleSize / (wallsPerSide - 1)) * i;
+        wallPositions.push({x: left, y: y});
+      }
+      
+      // Right wall (25 walls)
+      for(let i = 1; i < wallsPerSide - 1; i++){ // Skip corners to avoid overlap
+        const y = top + (castleSize / (wallsPerSide - 1)) * i;
+        wallPositions.push({x: right, y: y});
+      }
+      
+      // Add some internal walls for fortress effect
+      for(let i = 0; i < 10; i++){
+        const angle = (i / 10) * TAU;
+        const radius = castleSize * 0.3;
+        const x = this.x + Math.cos(angle) * radius;
+        const y = this.y + Math.sin(angle) * radius;
+        wallPositions.push({x: x, y: y});
+      }
+      
+      // Create all the walls
+      for(const pos of wallPositions){
+        const wall = {
+          x: pos.x, y: pos.y, r: 15, hp: 300, maxHp: 300, team: this.team, dead: false, flash: 0
+        };
+        game.shieldWalls.push(wall);
+      }
+      
+      // Create massive gate indication
+      for(let i = 0; i < 15; i++){
+        game.spawnParticle(this.x, bottom + 30, rand(-20,20), rand(-10,10), 3.0, TEAM[this.team].color, 12);
+      }
+      
+      // Massive visual effect for castle building
+      for(let i = 0; i < 40; i++){
+        const angle = (i / 40) * TAU;
+        const x = this.x + Math.cos(angle) * castleSize/2;
+        const y = this.y + Math.sin(angle) * castleSize/2;
+        game.spawnParticle(x, y, 0, 0, 2.5, TEAM[this.team].color, 6);
+      }
+      
+      // Screen shake effect for massive construction
+      for(let i = 0; i < 20; i++){
+        game.spawnParticle(this.x, this.y, rand(-100,100), rand(-100,100), 1.0, TEAM[this.team].color, 8);
+      }
+      
+      // Builder dies after building massive castle
+      this.hp = 0;
+      this.dead = true;
+    }
+    chargeAttack(game){
+      // Cavalry charge attack - pushes through enemies
+      if(!this.target) return;
+      
+      const dx = this.target.x - this.x;
+      const dy = this.target.y - this.y;
+      const dist = Math.hypot(dx, dy) + 1e-6;
+      const dirx = dx / dist;
+      const diry = dy / dist;
+      
+      // Apply charge force to self
+      this.vx += dirx * this.chargeForce;
+      this.vy += diry * this.chargeForce;
+      
+      // Hit multiple enemies in charge path
+      const chargeRange = this.radius + 30;
+      const enemies = game.queryNearby(this.x, this.y, chargeRange);
+      for(const enemy of enemies){
+        if(enemy.team === this.team || enemy.dead) continue;
+        
+        // Damage enemy
+        enemy.hit(this.damage, game, this.x, this.y);
+        
+        // Push enemy back
+        const pushDx = enemy.x - this.x;
+        const pushDy = enemy.y - this.y;
+        const pushDist = Math.hypot(pushDx, pushDy) + 1e-6;
+        enemy.vx += (pushDx / pushDist) * 150;
+        enemy.vy += (pushDy / pushDist) * 150;
+        
+        // Visual effect
+        for(let i = 0; i < 8; i++){
+          game.spawnParticle(enemy.x, enemy.y, rand(-100,100), rand(-100,100), 0.5, '#ffaa00', 2);
+        }
+      }
+      
+      // Charge visual effect
+      for(let i = 0; i < 12; i++){
+        game.spawnParticle(this.x, this.y, dirx * rand(-50,200), diry * rand(-50,200), 0.4, '#ff8800', 3);
+      }
+    }
+    buildCastle(game){
+      // Builder creates castle with gate and shield walls
+      const castleSize = 80;
+      const gateWidth = 30;
+      
+      // Calculate castle boundaries
+      const left = this.x - castleSize/2;
+      const right = this.x + castleSize/2;
+      const top = this.y - castleSize/2;
+      const bottom = this.y + castleSize/2;
+      
+      // Build castle walls (using shield walls)
+      const wallPositions = [
+        // Top wall
+        {x: left + castleSize/4, y: top}, {x: left + castleSize*3/4, y: top},
+        // Bottom wall  
+        {x: left + castleSize/4, y: bottom}, {x: left + castleSize*3/4, y: bottom},
+        // Left wall
+        {x: left, y: top + castleSize/4}, {x: left, y: top + castleSize*3/4},
+        // Right wall
+        {x: right, y: top + castleSize/4}, {x: right, y: top + castleSize*3/4}
+      ];
+      
+      for(const pos of wallPositions){
+        const wall = {
+          x: pos.x, y: pos.y, r: 12, hp: 200, maxHp: 200, team: this.team, dead: false, flash: 0
+        };
+        game.shieldWalls.push(wall);
+      }
+      
+      // Create gate indication (no actual collision, just visual)
+      game.spawnParticle(this.x, bottom + 20, 0, 0, 2.0, TEAM[this.team].color, 8);
+      
+      // Visual effect for castle building
+      for(let i = 0; i < 20; i++){
+        const angle = (i / 20) * TAU;
+        const x = this.x + Math.cos(angle) * castleSize/2;
+        const y = this.y + Math.sin(angle) * castleSize/2;
+        game.spawnParticle(x, y, 0, 0, 1.5, TEAM[this.team].color, 4);
+      }
+      
+      // Builder dies after building
+      this.hp = 0;
+      this.dead = true;
+    }
+    spawnMonsters(game){
+      // Monster King spawns 10 monsters around itself
+      for(let i = 0; i < 10; i++){
+        const angle = (i / 10) * TAU;
+        const spawnX = this.x + Math.cos(angle) * 50;
+        const spawnY = this.y + Math.sin(angle) * 50;
+        const monster = game.spawnUnit('monster', this.team, spawnX, spawnY);
+        
+        // Set initial target for spawned monsters
+        if(this.target){
+          monster.target = this.target;
+        }
+        
+        // Spawn visual effect
+        for(let j = 0; j < 5; j++){
+          game.spawnParticle(spawnX, spawnY, rand(-80,80), rand(-80,80), 0.8, '#ff4444', 3);
+        }
+      }
+      
+      // King spawn visual effect
+      for(let i = 0; i < 15; i++){
+        const angle = rand(0, TAU);
+        game.spawnParticle(this.x, this.y, Math.cos(angle) * 120, Math.sin(angle) * 120, 1.0, '#ff0000', 4);
+      }
+    }
+    throwKunaiSpread(game){
+      // Loid throws 3 kunai in completely different directions (spread pattern)
+      if(!this.target) return;
+      
+      // Create 3 kunai in different directions (120 degrees apart)
+      for(let i = 0; i < 3; i++){
+        const angle = (i / 3) * TAU; // 0, 120, 240 degrees
+        const targetX = this.x + Math.cos(angle) * 300; // throw far distance
+        const targetY = this.y + Math.sin(angle) * 300;
+        
+        const kunai = new Kunai(this.x, this.y, targetX, targetY, this.team, this);
+        game.kunais.push(kunai);
+        this.kunais.push(kunai);
+        
+        // Visual effect for throw
+        for(let j = 0; j < 4; j++){
+          game.spawnParticle(this.x, this.y, Math.cos(angle) * rand(150,250), Math.sin(angle) * rand(150,250), 0.4, '#c0c0c0', 2);
+        }
+      }
+      
+      // Visual effect for spread throw
+      for(let i = 0; i < 12; i++){
+        const angle = rand(0, TAU);
+        game.spawnParticle(this.x, this.y, Math.cos(angle) * 100, Math.sin(angle) * 100, 0.6, 'rgba(192,192,192,0.8)', 3);
+      }
+    }
+    teleportToKunai(game){
+      // Loid teleports to one of his kunai and explodes the others
+      if(this.kunais.length === 0) return;
+      
+      // Choose a random kunai to teleport to
+      const teleportIndex = Math.floor(Math.random() * this.kunais.length);
+      const teleportKunai = this.kunais[teleportIndex];
+      
+      // Store old position for visual effect
+      const oldX = this.x;
+      const oldY = this.y;
+      
+      // Teleport to kunai position
+      this.x = teleportKunai.x;
+      this.y = teleportKunai.y;
+      
+      // Visual effect for teleport
+      for(let i = 0; i < 10; i++){
+        const alpha = 1 - (i / 10);
+        const trailX = oldX + (teleportKunai.x - oldX) * (i / 10);
+        const trailY = oldY + (teleportKunai.y - oldY) * (i / 10);
+        game.spawnParticle(trailX, trailY, rand(-30,30), rand(-30,30), 0.5, 'rgba(192,192,192,0.9)', 3);
+      }
+      
+      // Explode the other 2 kunai
+      for(let i = 0; i < this.kunais.length; i++){
+        if(i !== teleportIndex){
+          const kunai = this.kunais[i];
+          // Create explosion at kunai position
+          for(let j = 0; j < 15; j++){
+            const angle = (j / 15) * TAU;
+            const speed = rand(100, 200);
+            game.spawnParticle(kunai.x, kunai.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 0.8, '#ff6b6b', 3);
+          }
+          
+          // Damage nearby enemies from explosion
+          const explosionRadius = 40;
+          const enemies = game.queryNearby(kunai.x, kunai.y, explosionRadius);
+          for(const enemy of enemies){
+            if(enemy.team === this.team || enemy.dead) continue;
+            const dist = Math.hypot(enemy.x - kunai.x, enemy.y - kunai.y);
+            if(dist <= explosionRadius){
+              enemy.hit(10, game, kunai.x, kunai.y); // explosion damage
+            }
+          }
+          
+          // Remove the exploded kunai
+          kunai.dead = true;
+        }
+      }
+      
+      // Clear all kunais (teleported one is used up, others exploded)
+      this.kunais = [];
+    }
+    blinkAttack(game){
+      // Lance blinks and leaves yellow trail that damages enemies
+      if(!this.target) return;
+      
+      // Calculate blink direction (towards target but with some randomness)
+      const dx = this.target.x - this.x;
+      const dy = this.target.y - this.y;
+      const dist = Math.hypot(dx, dy) + 1e-6;
+      
+      // Blink distance (short range blink)
+      const blinkDist = 80;
+      const blinkX = this.x + (dx / dist) * blinkDist;
+      const blinkY = this.y + (dy / dist) * blinkDist;
+      
+      // Create trail from current position to blink position
+      const trail = {
+        startX: this.x,
+        startY: this.y,
+        endX: blinkX,
+        endY: blinkY,
+        team: this.team,
+        damage: this.damage,
+        life: this.blinkDuration,
+        maxLife: this.blinkDuration
+      };
+      
+      this.trails.push(trail);
+      if(this.trails.length > this.maxTrailLength){
+        this.trails.shift();
+      }
+      
+      // Move Lance to new position
+      this.x = blinkX;
+      this.y = blinkY;
+      
+      // Visual blink effect
+      for(let i = 0; i < 12; i++){
+        const angle = rand(0, TAU);
+        const speed = rand(150, 250);
+        game.spawnParticle(this.x, this.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 0.8, '#ffff00', 3);
+      }
+      
+      // Flash effect
+      this.flash = 0.3;
+    }
+    updateTrails(dt){
+      // Update Lance's trails and check for damage
+      for(let i = this.trails.length - 1; i >= 0; i--){
+        const trail = this.trails[i];
+        trail.life -= dt;
+        
+        if(trail.life <= 0){
+          this.trails.splice(i, 1);
+          continue;
+        }
+        
+        // Check if any enemies hit the trail
+        for(const unit of game.units){
+          if(unit.dead || unit.team === this.team) continue;
+          
+          // Check distance from unit to trail line
+          const dist = distPointToLineSegment(unit.x, unit.y, trail.startX, trail.startY, trail.endX, trail.endY);
+          if(dist <= unit.radius + 5){ // 5px trail width
+            unit.hit(trail.damage * (trail.life / trail.maxLife), game, unit.x, unit.y);
+            
+            // Visual hit effect
+            for(let j = 0; j < 6; j++){
+              game.spawnParticle(unit.x, unit.y, rand(-80,80), rand(-80,80), 0.4, '#ffff00', 2);
+            }
+          }
+        }
       }
     }
     integrate(game, dt){
@@ -703,6 +2294,8 @@
       // environmental collisions: rivers + walls are impassable (push out strongly)
       const rpush = game.riverPush(this.x,this.y); if(rpush){ this.x+=rpush.x; this.y+=rpush.y; this.vx*=0.1; this.vy*=0.1; }
       const wpush = game.wallPush(this.x,this.y); if(wpush){ this.x+=wpush.x; this.y+=wpush.y; this.vx*=0.1; this.vy*=0.1; }
+      // nuclear base collision (can't walk through)
+      for(const base of game.nuclearBases){ if(base.dead) continue; const dx=this.x-base.x, dy=this.y-base.y; const dist=Math.hypot(dx,dy)+1e-6; const minDist=this.radius+30; if(dist<minDist){ const push=(minDist-dist)*0.8; this.x+=(dx/dist)*push; this.y+=(dy/dist)*push; this.vx*=0.1; this.vy*=0.1; } }
       // No bounds - infinite map!
 
       if(this.flash>0) this.flash-=dt;
@@ -724,6 +2317,38 @@
 
       // ninja vanish visual
       if(this.type==='ninja' && this.vanish>0){ g.save(); g.globalAlpha=0.6; g.strokeStyle='rgba(200,200,200,0.6)'; g.beginPath(); g.arc(this.x,this.y, this.radius*1.2, 0, TAU); g.stroke(); g.restore(); this.vanish-=0.03; }
+
+      // cavalry charge visual
+      if(this.type==='cavalry' && this.isCharging){ 
+        g.save(); g.globalAlpha=0.4; g.strokeStyle='rgba(255,136,0,0.8)'; g.lineWidth=3; g.beginPath(); g.arc(this.x,this.y, this.radius*1.5, 0, TAU); g.stroke(); g.restore(); 
+      }
+
+      // Lance trail visual
+      if(this.type==='lance' && this.trails.length > 0){
+        for(const trail of this.trails){
+          const alpha = trail.life / trail.maxLife * 0.8;
+          g.save();
+          g.globalAlpha = alpha;
+          g.strokeStyle = '#ffff00';
+          g.lineWidth = 5;
+          g.lineCap = 'round';
+          g.beginPath();
+          g.moveTo(trail.startX, trail.startY);
+          g.lineTo(trail.endX, trail.endY);
+          g.stroke();
+          g.restore();
+        }
+      }
+
+      // builder build visual
+      if(this.type==='builder' && this.buildCooldown > 900){ 
+        g.save(); g.globalAlpha=0.6; g.strokeStyle='rgba(255,215,0,0.8)'; g.lineWidth=2; g.setLineDash([5,5]); g.beginPath(); g.arc(this.x,this.y, this.radius*2, 0, TAU); g.stroke(); g.setLineDash([]); g.restore(); 
+      }
+
+      // monster intimidating aura
+      if(this.type==='monster' || this.type==='monsterking'){ 
+        g.save(); g.globalAlpha=0.3; g.strokeStyle='rgba(255,0,0,0.6)'; g.lineWidth=2; g.beginPath(); g.arc(this.x,this.y, this.radius*1.8, 0, TAU); g.stroke(); g.restore(); 
+      }
 
       // hit flash overlay
       if(this.flash>0){ g.globalAlpha = clamp(this.flash/0.12, 0, 1); g.fillStyle='#ffffff'; g.beginPath(); g.arc(this.x,this.y,this.radius,0,TAU); g.fill(); g.globalAlpha=1; }
@@ -748,31 +2373,193 @@
   // ---------- Game ----------
   class Game{
     constructor(){
-      this.units=[]; this.projectiles=[]; this.particles=[]; this.texts=[]; this.grid=new SpatialHash(48); // world units
+      this.units=[]; this.projectiles=[]; this.particles=[]; this.texts=[]; this.swordSwings=[]; this.explosionWaves=[]; this.kunais=[]; this.nuclearBases=[]; this.nuclearMissiles=[]; this.turrets=[]; this.grid=new SpatialHash(48); // world units
       this.last=performance.now();
       this.blueAlive=0; this.redAlive=0;
-      this.rivers=[]; this.walls=[]; this.bridges=[]; // obstacles as circles {x,y,r,life?}
+      this.rivers=[]; this.walls=[]; this.bridges=[]; // obstacles as line segments: {x1,y1,x2,y2,type,width}
       this.shieldWalls=[]; // {x,y,r,hp,maxHp,team,dead}
       this.slowFields=[]; // {x,y,r,life,team,slow}
       this.pathCache=new Map(); this.pathCacheTime=0;
     }
     spawnUnit(type, team, x, y){
-      const u=new Unit(type, team, x, y); this.units.push(u); return u;
+      const u=new Unit(type, team, x, y); 
+      this.units.push(u); 
+      if(type === 'turret'){
+        this.turrets.push(u);
+      }
+      return u;
+    }
+    addNuclearBase(team, x, y){
+      const base = new NuclearBase(x, y, team);
+      this.nuclearBases.push(base);
+      
+      // Visual effect for base construction
+      for(let i = 0; i < 20; i++){
+        const angle = (i / 20) * TAU;
+        const speed = rand(100, 200);
+        this.spawnParticle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.0, TEAM[team].color, 4);
+      }
+      
+      return base;
+    }
+    updateNuclearMissile(missile, dt){
+      // Move missile towards target
+      const dx = missile.targetX - missile.x;
+      const dy = missile.targetY - missile.y;
+      const dist = Math.hypot(dx, dy) + 1e-6;
+      
+      missile.x += (dx / dist) * missile.speed * dt;
+      missile.y += (dy / dist) * missile.speed * dt;
+      
+      // Add to trail
+      missile.trail.push({x: missile.x, y: missile.y});
+      if(missile.trail.length > missile.maxTrailLength){
+        missile.trail.shift();
+      }
+      
+      // Check if reached target
+      if(dist < 10){
+        this.explodeNuclearMissile(missile);
+        missile.dead = true;
+      }
+    }
+    explodeNuclearMissile(missile){
+      // MASSIVE explosion - damages EVERYONE (friendly fire!)
+      for(const unit of this.units){
+        if(unit.dead) continue;
+        const dist = Math.hypot(unit.x - missile.x, unit.y - missile.y);
+        if(dist <= missile.explosionRadius){
+          const damage = missile.damage * (1 - dist / missile.explosionRadius); // falloff
+          unit.hit(damage, this, missile.x, missile.y);
+        }
+      }
+      
+      // Damage nuclear bases too (including own bases!)
+      for(const base of this.nuclearBases){
+        if(base.dead) continue; // damage ALL bases including own!
+        const dist = Math.hypot(base.x - missile.x, base.y - missile.y);
+        if(dist <= missile.explosionRadius){
+          const damage = missile.damage * (1 - dist / missile.explosionRadius); // falloff
+          base.takeDamage(damage * 2, this); // DOUBLE damage to ensure destruction
+        }
+      }
+      
+      // Visual explosion effect
+      for(let i = 0; i < 200; i++){ // more particles (was 100)
+        const angle = (i / 200) * TAU;
+        const speed = rand(400, 800); // faster particles (was 300-600)
+        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 3.0, '#ff6600', 8); // bigger particles
+      }
+      
+      // Screen shake effect (visual feedback)
+      for(let i = 0; i < 100; i++){ // more particles (was 50)
+        const angle = rand(0, TAU);
+        const speed = rand(300, 600); // faster particles
+        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 2.0, '#ff0000', 6); // bigger particles
+      }
+      
+      // Add flash effect
+      for(let i = 0; i < 60; i++){ // more flash particles (was 30)
+        const angle = rand(0, TAU);
+        const speed = rand(200, 400); // faster flash
+        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.5, '#ffff00', 5); // bigger flash
+      }
+    }
+    drawNuclearMissile(missile, g){
+      // Draw trail
+      for(let i = 0; i < missile.trail.length; i++){
+        const point = missile.trail[i];
+        const alpha = (i / missile.trail.length) * 0.8;
+        g.save();
+        g.globalAlpha = alpha;
+        g.fillStyle = '#ff6600';
+        g.beginPath();
+        g.arc(point.x, point.y, 3, 0, TAU);
+        g.fill();
+        g.restore();
+      }
+      
+      // Draw missile
+      g.save();
+      g.fillStyle = '#ff0000';
+      g.strokeStyle = '#ffff00';
+      g.lineWidth = 2;
+      
+      // Missile body
+      g.beginPath();
+      g.arc(missile.x, missile.y, missile.radius, 0, TAU);
+      g.fill();
+      g.stroke();
+      
+      // Missile direction indicator
+      const angle = Math.atan2(missile.targetY - missile.y, missile.targetX - missile.x);
+      g.save();
+      g.translate(missile.x, missile.y);
+      g.rotate(angle);
+      g.beginPath();
+      g.moveTo(missile.radius, 0);
+      g.lineTo(missile.radius + 10, -3);
+      g.lineTo(missile.radius + 10, 3);
+      g.closePath();
+      g.fill();
+      g.restore();
+      
+      // Warning glow
+      g.save();
+      g.globalAlpha = 0.3;
+      g.strokeStyle = '#ff0000';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(missile.x, missile.y, missile.radius + 5, 0, TAU);
+      g.stroke();
+      g.restore();
+      
+      g.restore();
     }
     spawnParticle(x,y, vx,vy, life, color, size){ if(this.particles.length>1500) return; this.particles.push(new Particle(x,y,vx,vy,life,color,size)); }
     queryNearby(x,y,r){ return this.grid.query(x,y,r); }
-    addObstacle(type,x,y,r=18,life=null){ const arr = type==='river'? this.rivers: this.walls; arr.push({x,y,r,life}); if(arr.length>800) arr.shift(); this.pathCache.clear(); }
-    addShieldWall(team,x,y,r=20){ this.shieldWalls.push({x,y,r,hp:200,maxHp:200,team,dead:false,flash:0}); if(this.shieldWalls.length>200) this.shieldWalls.shift(); this.pathCache.clear(); }
-    eraseObstacle(x,y,rad){ function removeNear(arr){ for(let i=arr.length-1;i>=0;i--){ if(dist2(x,y,arr[i].x,arr[i].y) < (rad+arr[i].r)*(rad+arr[i].r)){ arr.splice(i,1); } } } removeNear(this.rivers); removeNear(this.walls); for(let i=this.shieldWalls.length-1;i>=0;i--){ if(dist2(x,y,this.shieldWalls[i].x,this.shieldWalls[i].y) < (rad+this.shieldWalls[i].r)*(rad+this.shieldWalls[i].r)){ this.shieldWalls.splice(i,1); } } this.pathCache.clear(); }
-    addBridge(x,y,r=26){ this.bridges.push({x,y,r}); if(this.bridges.length>400) this.bridges.shift(); }
-    onBridge(x,y){ for(const b of this.bridges){ if(dist2(x,y,b.x,b.y) <= b.r*b.r) return true; } return false; }
-    riverPush(x,y){ if(this.onBridge(x,y)) return null; for(const o of this.rivers){ const dx=x-o.x, dy=y-o.y; const d=Math.hypot(dx,dy); if(d<o.r){ const k=(o.r-d)+1.5; return {x:dx/d*k, y:dy/d*k}; } } return null; }
+    addObstacle(type,x1,y1,x2,y2,width=8){ const arr = type==='river'? this.rivers: this.walls; arr.push({x1,y1,x2,y2,type,width}); this.pathCache.clear(); }
+    addShieldWall(team,x,y,r=20){ this.shieldWalls.push({x,y,r,hp:200,maxHp:200,team,dead:false,flash:0}); this.pathCache.clear(); }
+    eraseObstacle(x,y,rad){ 
+      function removeNearLines(arr){ 
+        for(let i=arr.length-1;i>=0;i--){ 
+          const o=arr[i];
+          if(distPointToLineSegment(x,y,o.x1,o.y1,o.x2,o.y2) < rad){ 
+            arr.splice(i,1); 
+          } 
+        } 
+      } 
+      removeNearLines(this.rivers); 
+      removeNearLines(this.walls); 
+      removeNearLines(this.bridges);
+      for(let i=this.shieldWalls.length-1;i>=0;i--){ 
+        if(dist2(x,y,this.shieldWalls[i].x,this.shieldWalls[i].y) < (rad+this.shieldWalls[i].r)*(rad+this.shieldWalls[i].r)){ 
+          this.shieldWalls.splice(i,1); 
+        } 
+      } 
+      this.pathCache.clear(); 
+    }
+    addBridge(x1,y1,x2,y2,width=12){ this.bridges.push({x1,y1,x2,y2,type:'bridge',width}); }
+    onBridge(x,y){ for(const b of this.bridges){ if(distPointToLineSegment(x,y,b.x1,b.y1,b.x2,b.y2) <= b.width) return true; } return false; }
+    riverPush(x,y){ if(this.onBridge(x,y)) return null; for(const o of this.rivers){ const d=distPointToLineSegment(x,y,o.x1,o.y1,o.x2,o.y2); if(d<o.width){ const k=(o.width-d)+1.5; // Push perpendicular to line
+      const dx=o.x2-o.x1, dy=o.y2-o.y1, len=Math.sqrt(dx*dx+dy*dy)||1;
+      const perpx=-dy/len, perpy=dx/len;
+      // Determine which side to push
+      const midx=(o.x1+o.x2)/2, midy=(o.y1+o.y2)/2;
+      const side=(x-midx)*perpx + (y-midy)*perpy;
+      return {x:perpx*k*(side>0?1:-1), y:perpy*k*(side>0?1:-1)}; } } return null; }
     wallPush(x,y){ 
-      for(const o of this.walls){ const dx=x-o.x, dy=y-o.y; const d=Math.hypot(dx,dy); if(d<o.r){ const k=(o.r-d)+1.5; return {x:dx/d*k, y:dy/d*k}; } } 
+      for(const o of this.walls){ const d=distPointToLineSegment(x,y,o.x1,o.y1,o.x2,o.y2); if(d<o.width){ const k=(o.width-d)+1.5; // Push perpendicular to line
+      const dx=o.x2-o.x1, dy=o.y2-o.y1, len=Math.sqrt(dx*dx+dy*dy)||1;
+      const perpx=-dy/len, perpy=dx/len;
+      // Determine which side to push
+      const midx=(o.x1+o.x2)/2, midy=(o.y1+o.y2)/2;
+      const side=(x-midx)*perpx + (y-midy)*perpy;
+      return {x:perpx*k*(side>0?1:-1), y:perpy*k*(side>0?1:-1)}; } }
       for(const sw of this.shieldWalls){ if(sw.dead) continue; const dx=x-sw.x, dy=y-sw.y; const d=Math.hypot(dx,dy); if(d<sw.r){ const k=(sw.r-d)+1.5; return {x:dx/d*k, y:dy/d*k}; } }
       return null; 
     }
-    projectileBlocked(x,y){ for(const o of this.walls){ const dx=x-o.x, dy=y-o.y; if(dx*dx+dy*dy <= o.r*o.r) return true; } return false; }
+    projectileBlocked(x,y){ for(const o of this.walls){ if(distPointToLineSegment(x,y,o.x1,o.y1,o.x2,o.y2) <= o.width) return true; } return false; }
     addSlowField(x,y,r,life,team,slow){ this.slowFields.push({x,y,r,life,team,slow}); if(this.slowFields.length>200) this.slowFields.shift(); }
     isPathBlocked(sx,sy,ex,ey){
       // Cek apakah ada obstacle di jalur langsung dengan sampling
@@ -781,9 +2568,10 @@
       for(let i=1;i<=steps;i++){ 
         const t=i/steps; 
         const px=sx+(ex-sx)*t, py=sy+(ey-sy)*t;
-        for(const w of this.walls){ if(dist2(px,py,w.x,w.y) <= (w.r+checkRadius)*(w.r+checkRadius)) return true; }
+        for(const w of this.walls){ if(distPointToLineSegment(px,py,w.x1,w.y1,w.x2,w.y2) <= (w.width+checkRadius)) return true; }
         for(const sw of this.shieldWalls){ if(sw.dead) continue; if(dist2(px,py,sw.x,sw.y) <= (sw.r+checkRadius)*(sw.r+checkRadius)) return true; }
-        for(const r of this.rivers){ if(dist2(px,py,r.x,r.y) <= (r.r+checkRadius)*(r.r+checkRadius)) return true; }
+        for(const base of this.nuclearBases){ if(base.dead) continue; if(dist2(px,py,base.x,base.y) <= (30+checkRadius)*(30+checkRadius)) return true; }
+        for(const r of this.rivers){ if(distPointToLineSegment(px,py,r.x1,r.y1,r.x2,r.y2) <= (r.width+checkRadius)) return true; }
       }
       return false;
     }
@@ -799,9 +2587,9 @@
       const isBlocked=(gx,gy)=>{ 
         if(gx<0||gy<0||gx>=gw||gy>=gh) return true; 
         const p=fromGrid(gx,gy); 
-        for(const w of this.walls){ if(dist2(p.x,p.y,w.x,w.y)<=(w.r+cellSize*0.5)*(w.r+cellSize*0.5)) return true; } 
+        for(const w of this.walls){ if(distPointToLineSegment(p.x,p.y,w.x1,w.y1,w.x2,w.y2) <= (w.width+cellSize*0.5)) return true; } 
         for(const sw of this.shieldWalls){ if(sw.dead) continue; if(dist2(p.x,p.y,sw.x,sw.y)<=(sw.r+cellSize*0.5)*(sw.r+cellSize*0.5)) return true; } 
-        for(const r of this.rivers){ if(dist2(p.x,p.y,r.x,r.y)<=(r.r+cellSize*0.5)*(r.r+cellSize*0.5)) return true; }
+        for(const r of this.rivers){ if(distPointToLineSegment(p.x,p.y,r.x1,r.y1,r.x2,r.y2) <= (r.width+cellSize*0.5)) return true; }
         return false; 
       };
       const start=toGrid(sx,sy), end=toGrid(ex,ey); 
@@ -868,6 +2656,16 @@
         // Check collision with shieldWalls
         if(!p.dead){ for(const sw of this.shieldWalls){ if(sw.dead || sw.team===p.team) continue; if(dist2(p.x,p.y,sw.x,sw.y) <= (sw.r+p.radius)*(sw.r+p.radius)){ sw.hp-=p.dmg; sw.flash=0.1; this.texts.push(new FloatingText(sw.x,sw.y-12*dpr,'-'+Math.round(p.dmg),TEAM[sw.team].color)); for(let i=0;i<4;i++) this.spawnParticle(p.x,p.y,rand(-60,60),rand(-60,30),0.4,'#ffffff',2*dpr); if(sw.hp<=0){ sw.dead=true; for(let i=0;i<30;i++) this.spawnParticle(sw.x,sw.y,rand(-180,180),rand(-180,180),0.8,TEAM[sw.team].blood,3*dpr); this.pathCache.clear(); } p.dead=true; break; } } }
       } }
+      // sword swings
+      for(const swing of this.swordSwings){ if(!swing.dead){ swing.update(dt, this); } }
+      // explosion waves
+      for(const wave of this.explosionWaves){ if(!wave.dead){ wave.update(dt, this); } }
+      // kunai
+      for(const kunai of this.kunais){ if(!kunai.dead){ kunai.update(dt, this); } }
+      // nuclear bases
+      for(const base of this.nuclearBases){ if(!base.dead){ base.update(dt, this); } }
+      // nuclear missiles
+      for(const missile of this.nuclearMissiles){ if(!missile.dead){ this.updateNuclearMissile(missile, dt); } }
       // particles & texts
       for(const q of this.particles){ q.update(dt); }
       // slow fields decay
@@ -878,7 +2676,12 @@
       this.particles = this.particles.filter(p=>p.t<p.life);
       this.slowFields = this.slowFields.filter(s=>s.life>0);
       this.texts = this.texts.filter(t=>t.t<t.life);
+      this.kunais = this.kunais.filter(k=>!k.dead);
+      this.nuclearBases = this.nuclearBases.filter(b=>!b.dead);
+      this.nuclearMissiles = this.nuclearMissiles.filter(m=>!m.dead);
       this.shieldWalls = this.shieldWalls.filter(sw=>!sw.dead);
+      this.swordSwings = this.swordSwings.filter(s=>!s.dead);
+      this.explosionWaves = this.explosionWaves.filter(w=>!w.dead);
 
       // stats
       let blue=0, red=0; for(const u of this.units){ if(!u.dead){ if(u.team==='blue') blue++; else red++; } }
@@ -895,11 +2698,11 @@
       g.translate(-camera.x, -camera.y);
       // obstacles render
       // rivers
-      for(const o of this.rivers){ g.save(); g.globalAlpha=0.28; g.fillStyle='rgba(42,224,255,0.8)'; g.shadowColor='rgba(42,224,255,0.8)'; g.shadowBlur=10; g.beginPath(); g.arc(o.x,o.y,o.r,0,TAU); g.fill(); g.restore(); }
+      for(const o of this.rivers){ g.save(); g.globalAlpha=0.6; g.strokeStyle='rgba(42,224,255,0.9)'; g.lineWidth=o.width*2; g.lineCap='round'; g.shadowColor='rgba(42,224,255,0.8)'; g.shadowBlur=8; g.beginPath(); g.moveTo(o.x1,o.y1); g.lineTo(o.x2,o.y2); g.stroke(); g.restore(); }
       // bridges
-      for(const b of this.bridges){ g.save(); g.globalAlpha=0.9; g.fillStyle='rgba(140,120,80,0.85)'; g.shadowColor='rgba(140,120,80,0.6)'; g.shadowBlur=4; g.beginPath(); g.arc(b.x,b.y,b.r,0,TAU); g.fill(); g.restore(); }
+      for(const b of this.bridges){ g.save(); g.globalAlpha=0.9; g.strokeStyle='rgba(140,120,80,0.95)'; g.lineWidth=b.width*2; g.lineCap='round'; g.shadowColor='rgba(140,120,80,0.6)'; g.shadowBlur=4; g.beginPath(); g.moveTo(b.x1,b.y1); g.lineTo(b.x2,b.y2); g.stroke(); g.restore(); }
       // walls
-      for(const o of this.walls){ g.save(); g.globalAlpha=0.85; g.fillStyle='rgba(255,255,255,0.8)'; g.shadowColor='rgba(255,255,255,0.6)'; g.shadowBlur=6; g.beginPath(); g.arc(o.x,o.y,o.r,0,TAU); g.fill(); g.restore(); if(o.life){ o.life-=this.dt; if(o.life<=0){ this.walls.splice(this.walls.indexOf(o),1); } } }
+      for(const o of this.walls){ g.save(); g.globalAlpha=0.9; g.strokeStyle='rgba(255,255,255,0.95)'; g.lineWidth=o.width*2; g.lineCap='round'; g.shadowColor='rgba(255,255,255,0.6)'; g.shadowBlur=6; g.beginPath(); g.moveTo(o.x1,o.y1); g.lineTo(o.x2,o.y2); g.stroke(); g.restore(); }
       // shieldWalls
       for(const sw of this.shieldWalls){ if(sw.dead) continue; g.save(); const col=TEAM[sw.team].color; g.fillStyle=col; g.shadowColor=col; g.shadowBlur=10; g.globalAlpha=0.7; g.beginPath(); g.arc(sw.x,sw.y,sw.r,0,TAU); g.fill(); g.restore(); 
         // HP bar
@@ -913,6 +2716,16 @@
       for(const u of this.units){ if(u.dead) u.draw(g); }
       // trails behind units
       for(const p of this.projectiles){ p.draw(g); }
+      // sword swings
+      for(const swing of this.swordSwings){ swing.draw(g); }
+      // explosion waves
+      for(const wave of this.explosionWaves){ wave.draw(g); }
+      // kunai
+      for(const kunai of this.kunais){ kunai.draw(g); }
+      // nuclear bases
+      for(const base of this.nuclearBases){ base.draw(g); }
+      // nuclear missiles
+      for(const missile of this.nuclearMissiles){ this.drawNuclearMissile(missile, g); }
       // living units on top
       for(const u of this.units){ if(!u.dead) u.draw(g); }
       // particles and texts on top
@@ -957,20 +2770,108 @@
 
   // ---------- Loop ----------
   let run = false;
+  // FPS tracking
+  let fps = 60;
+  let fpsUpdateTime = 0;
+  let frameCount = 0;
+  
   function toggleRun(){ run=!run; }
   function resetBattle(){
     game.units.length=0; game.projectiles.length=0; game.particles.length=0; game.texts.length=0; game.shieldWalls.length=0; game.pathCache.clear(); run=false;
   }
 
+  function drawCoordinateRulers(){
+    const g = ctx; // Use main canvas context for overlay
+    const w = canvas.width / dpr;
+    const h = canvas.height / dpr;
+    
+    g.save();
+    // Reset transform to screen space for overlay
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    
+    // Configure text style
+    g.font = '10px monospace';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    
+    // Draw X coordinate ruler (top)
+    g.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    g.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    const xStep = 100; // Show coordinates every 100 pixels
+    const startX = Math.floor(camera.x / xStep) * xStep;
+    const endX = startX + w / camera.zoom + xStep * 2;
+    
+    for(let x = startX; x <= endX; x += xStep){
+      const screenX = (x - camera.x) * camera.zoom;
+      if(screenX >= 0 && screenX <= w){
+        // Draw tick mark
+        g.beginPath();
+        g.moveTo(screenX, 0);
+        g.lineTo(screenX, 15);
+        g.stroke();
+        
+        // Draw coordinate text
+        g.fillText(Math.round(x).toString(), screenX, 25);
+      }
+    }
+    
+    // Draw Y coordinate ruler (left)
+    g.textAlign = 'right';
+    const startY = Math.floor(camera.y / xStep) * xStep;
+    const endY = startY + h / camera.zoom + xStep * 2;
+    
+    for(let y = startY; y <= endY; y += xStep){
+      const screenY = (y - camera.y) * camera.zoom;
+      if(screenY >= 0 && screenY <= h){
+        // Draw tick mark
+        g.beginPath();
+        g.moveTo(0, screenY);
+        g.lineTo(15, screenY);
+        g.stroke();
+        
+        // Draw coordinate text
+        g.fillText(Math.round(y).toString(), 25, screenY);
+      }
+    }
+    
+    // Draw corner info box
+    g.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    g.fillRect(5, 5, 120, 40);
+    g.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    g.font = '11px monospace';
+    g.textAlign = 'left';
+    g.fillText(`Camera: (${Math.round(camera.x)}, ${Math.round(camera.y)})`, 10, 20);
+    g.fillText(`Zoom: ${(camera.zoom * 100).toFixed(0)}%`, 10, 35);
+    
+    // Draw manual control indicator
+    if(camera.manualControl){
+      g.fillStyle = 'rgba(255, 255, 0, 0.8)';
+      g.fillText('MANUAL CONTROL', 10, 50);
+    }
+    
+    g.restore();
+  }
+  
   function frame(t){
     const now=t; let dt=(now-game.last)/1000; game.last=now; dt=Math.min(0.033, Math.max(0.001, dt)); game.dt=dt;
+    
+    // FPS calculation
+    frameCount++;
+    fpsUpdateTime += dt;
+    if(fpsUpdateTime >= 1.0){
+      fps = Math.round(frameCount / fpsUpdateTime);
+      frameCount = 0;
+      fpsUpdateTime = 0;
+      document.getElementById('fpsCount').textContent = fps.toString();
+    }
     
     // Smooth zoom
     camera.zoom = lerp(camera.zoom, camera.targetZoom, camera.smoothing);
     if(Math.abs(camera.zoom - camera.targetZoom) < 0.001) camera.zoom = camera.targetZoom;
     
     // Auto-follow action (camera mengikuti center of mass units)
-    if(run && game.units.length > 0){
+    // ONLY if not in manual control mode
+    if(run && game.units.length > 0 && !camera.manualControl){
       let cx=0, cy=0, count=0;
       for(const u of game.units){ if(!u.dead){ cx+=u.x; cy+=u.y; count++; } }
       if(count>0){ 
@@ -983,6 +2884,7 @@
     drawGrid(); // redraw grid setiap frame untuk smooth panning
     if(run) game.update(dt);
     game.draw(ctx);
+    drawCoordinateRulers(); // Draw coordinate overlay
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
