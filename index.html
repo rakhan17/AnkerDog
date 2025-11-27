@@ -2441,25 +2441,25 @@
         }
       }
       
-      // Visual explosion effect
-      for(let i = 0; i < 200; i++){ // more particles (was 100)
-        const angle = (i / 200) * TAU;
-        const speed = rand(400, 800); // faster particles (was 300-600)
-        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 3.0, '#ff6600', 8); // bigger particles
+      // Visual explosion effect (reduced for performance)
+      for(let i = 0; i < 50; i++){ // reduced from 200
+        const angle = (i / 50) * TAU;
+        const speed = rand(400, 800);
+        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 3.0, '#ff6600', 8);
       }
       
-      // Screen shake effect (visual feedback)
-      for(let i = 0; i < 100; i++){ // more particles (was 50)
+      // Screen shake effect (reduced for performance)
+      for(let i = 0; i < 30; i++){ // reduced from 100
         const angle = rand(0, TAU);
-        const speed = rand(300, 600); // faster particles
-        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 2.0, '#ff0000', 6); // bigger particles
+        const speed = rand(300, 600);
+        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 2.0, '#ff0000', 6);
       }
       
-      // Add flash effect
-      for(let i = 0; i < 60; i++){ // more flash particles (was 30)
+      // Add flash effect (reduced for performance)
+      for(let i = 0; i < 20; i++){ // reduced from 60
         const angle = rand(0, TAU);
-        const speed = rand(200, 400); // faster flash
-        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.5, '#ffff00', 5); // bigger flash
+        const speed = rand(200, 400);
+        this.spawnParticle(missile.x, missile.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.5, '#ffff00', 5);
       }
     }
     drawNuclearMissile(missile, g){
@@ -2513,7 +2513,11 @@
       
       g.restore();
     }
-    spawnParticle(x,y, vx,vy, life, color, size){ if(this.particles.length>1500) return; this.particles.push(new Particle(x,y,vx,vy,life,color,size)); }
+    spawnParticle(x,y, vx,vy, life, color, size){ 
+      // Reduced particle limit for better performance (was 1500)
+      if(this.particles.length>800) return; 
+      this.particles.push(new Particle(x,y,vx,vy,life,color,size)); 
+    }
     queryNearby(x,y,r){ return this.grid.query(x,y,r); }
     addObstacle(type,x1,y1,x2,y2,width=8){ const arr = type==='river'? this.rivers: this.walls; arr.push({x1,y1,x2,y2,type,width}); this.pathCache.clear(); }
     addShieldWall(team,x,y,r=20){ this.shieldWalls.push({x,y,r,hp:200,maxHp:200,team,dead:false,flash:0}); this.pathCache.clear(); }
@@ -2640,10 +2644,19 @@
     }
     update(dt){
       this.pathCacheTime+=dt;
+      
+      // Adaptive quality: skip some updates if FPS is low
+      if(!this.updateCounter) this.updateCounter = 0;
+      this.updateCounter++;
+      const lowFPS = fps < 30;
+      const skipAI = lowFPS && (this.updateCounter % 2 === 0); // Skip AI every other frame when low FPS
+      
       // rebuild grid
       this.grid.clear(); for(const u of this.units){ if(!u.dead) this.grid.insert(u); }
-      // AI think
-      for(const u of this.units){ u.think(this, dt); }
+      // AI think (skip when low FPS)
+      if(!skipAI){
+        for(const u of this.units){ u.think(this, dt); }
+      }
       // physics integrate
       for(const u of this.units){ u.integrate(this, dt); }
       // shieldWalls update
@@ -2685,7 +2698,11 @@
       this.blueAlive=blue; this.redAlive=red; blueCountEl.textContent=blue.toString(); redCountEl.textContent=red.toString();
     }
     draw(g){
+      // Clear canvas BEFORE any transforms
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0); // Reset to identity
       g.clearRect(0,0,canvas.width, canvas.height);
+      g.restore();
       
       // Apply camera transform
       g.save();
@@ -2709,25 +2726,37 @@
       }
       // slow fields
       for(const s of this.slowFields){ g.save(); g.globalAlpha=0.18; g.fillStyle='rgba(180,220,255,0.8)'; g.beginPath(); g.arc(s.x,s.y,s.r,0,TAU); g.fill(); g.restore(); }
-      // corpses first (dead units flagged as corpse)
-      for(const u of this.units){ if(u.dead) u.draw(g); }
-      // trails behind units
-      for(const p of this.projectiles){ p.draw(g); }
-      // sword swings
-      for(const swing of this.swordSwings){ swing.draw(g); }
-      // explosion waves
+      // Calculate visible area for culling (optimization)
+      const viewPadding = 100; // Extra padding to avoid pop-in
+      const viewLeft = camera.x - (canvas.width / (2 * dpr * camera.zoom)) - viewPadding;
+      const viewRight = camera.x + (canvas.width / (2 * dpr * camera.zoom)) + viewPadding;
+      const viewTop = camera.y - (canvas.height / (2 * dpr * camera.zoom)) - viewPadding;
+      const viewBottom = camera.y + (canvas.height / (2 * dpr * camera.zoom)) + viewPadding;
+      
+      const isVisible = (x, y, radius = 20) => {
+        return x + radius >= viewLeft && x - radius <= viewRight && 
+               y + radius >= viewTop && y - radius <= viewBottom;
+      };
+      
+      // corpses first (dead units flagged as corpse) - with culling
+      for(const u of this.units){ if(u.dead && isVisible(u.x, u.y, u.radius)) u.draw(g); }
+      // trails behind units - with culling
+      for(const p of this.projectiles){ if(isVisible(p.x, p.y, 10)) p.draw(g); }
+      // sword swings - with culling
+      for(const swing of this.swordSwings){ if(isVisible(swing.x, swing.y, swing.width)) swing.draw(g); }
+      // explosion waves - always visible (large area)
       for(const wave of this.explosionWaves){ wave.draw(g); }
-      // kunai
-      for(const kunai of this.kunais){ kunai.draw(g); }
-      // nuclear bases
+      // kunai - with culling
+      for(const kunai of this.kunais){ if(isVisible(kunai.x, kunai.y, 10)) kunai.draw(g); }
+      // nuclear bases - always visible (important)
       for(const base of this.nuclearBases){ base.draw(g); }
-      // nuclear missiles
+      // nuclear missiles - always visible (important)
       for(const missile of this.nuclearMissiles){ this.drawNuclearMissile(missile, g); }
-      // living units on top
-      for(const u of this.units){ if(!u.dead) u.draw(g); }
-      // particles and texts on top
-      for(const q of this.particles){ q.draw(g); }
-      for(const t of this.texts){ t.draw(g); }
+      // living units on top - with culling
+      for(const u of this.units){ if(!u.dead && isVisible(u.x, u.y, u.radius)) u.draw(g); }
+      // particles and texts on top - with culling
+      for(const q of this.particles){ if(isVisible(q.x, q.y, 10)) q.draw(g); }
+      for(const t of this.texts){ if(isVisible(t.x, t.y, 20)) t.draw(g); }
       
       g.restore(); // restore camera transform
     }
@@ -2878,7 +2907,18 @@
       }
     }
     
-    drawGrid(); // redraw grid setiap frame untuk smooth panning
+    // Only redraw grid when camera moves significantly (optimization)
+    const gridRedrawThreshold = 5;
+    if(!game.lastCameraX || !game.lastCameraY || 
+       Math.abs(camera.x - game.lastCameraX) > gridRedrawThreshold || 
+       Math.abs(camera.y - game.lastCameraY) > gridRedrawThreshold ||
+       Math.abs(camera.zoom - game.lastCameraZoom) > 0.01){
+      drawGrid();
+      game.lastCameraX = camera.x;
+      game.lastCameraY = camera.y;
+      game.lastCameraZoom = camera.zoom;
+    }
+    
     if(run) game.update(dt);
     game.draw(ctx);
     drawCoordinateRulers(); // Draw coordinate overlay

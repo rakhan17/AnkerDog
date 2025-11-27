@@ -1,5 +1,48 @@
 
 
+# PERBAIKAN BUG & OPTIMASI PERFORMA
+
+## Bug yang Diperbaiki:
+1. **✅ Tembok Putih saat Lag** - Fixed! Masalah clearRect yang dipanggil setelah transform camera
+2. **✅ Lag Berat saat Banyak Unit** - Optimized! Ditambahkan culling dan reduced particle limit
+
+## Optimasi yang Diterapkan:
+
+### 1. Fix Rendering "Tembok Putih"
+- `clearRect()` sekarang dipanggil SEBELUM transform camera
+- Menggunakan `setTransform(1,0,0,1,0,0)` untuk reset ke identity matrix
+- Ini memastikan canvas selalu dibersihkan dengan benar, bahkan saat lag
+
+### 2. Optimasi Grid Redraw
+- Grid hanya di-redraw saat camera bergerak signifikan (threshold 5px)
+- Mengurangi beban rendering yang tidak perlu
+- Grid redraw juga di-trigger saat zoom berubah
+
+### 3. Frustum Culling
+- Hanya render objek yang terlihat di layar
+- Menambahkan padding 100px untuk menghindari pop-in
+- Diterapkan pada: units, projectiles, particles, texts, sword swings, kunai
+
+### 4. Particle Limit Reduction
+- Limit partikel dikurangi dari 1500 → 800
+- Nuclear missile explosion particles dikurangi:
+  - Main explosion: 200 → 50 particles
+  - Screen shake: 100 → 30 particles  
+  - Flash effect: 60 → 20 particles
+
+### 5. Adaptive Quality
+- Saat FPS < 30, AI thinking di-skip setiap frame kedua
+- Mengurangi beban CPU saat game lag
+- Physics tetap berjalan normal untuk smooth movement
+
+## Hasil:
+- ✅ Tidak ada lagi "tembok putih" saat lag
+- ✅ FPS lebih stabil saat banyak unit
+- ✅ Rendering lebih efisien dengan culling
+- ✅ Particle effects tetap bagus tapi lebih ringan
+
+---
+
 ## Per
 ubahan Sistem Koordinat
 - **World Space**: Semua unit dan obstacle sekarang menggunakan world coordinates (bukan screen pixels)
