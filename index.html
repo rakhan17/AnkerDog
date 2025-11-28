@@ -2742,8 +2742,11 @@
       for(const u of this.units){ if(u.dead && isVisible(u.x, u.y, u.radius)) u.draw(g); }
       // trails behind units - with culling
       for(const p of this.projectiles){ if(isVisible(p.x, p.y, 10)) p.draw(g); }
-      // sword swings - with culling
-      for(const swing of this.swordSwings){ if(isVisible(swing.x, swing.y, swing.width)) swing.draw(g); }
+      // sword swings - with culling (account for full length)
+      for(const swing of this.swordSwings){ 
+        const visibleRadius = Math.max(swing.width, swing.length * 0.5); // Account for sword length
+        if(isVisible(swing.x, swing.y, visibleRadius)) swing.draw(g); 
+      }
       // explosion waves - always visible (large area)
       for(const wave of this.explosionWaves){ wave.draw(g); }
       // kunai - with culling
